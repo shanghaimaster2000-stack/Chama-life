@@ -166,10 +166,12 @@ count:loc.count
       />
       {logs.map((log,i)=>(
         <Circle
-         key={i}
-         center={[log.lat,log.lon]}
-         radius={5000}
-    >
+          key={i}
+          {...({
+          center: [log.lat, log.lon],
+          radius: 5000
+         } as any)}
+       >
         <Popup>
         {log.type === "restaurant" ? "🍜" :
          log.type === "hotel" ? "🏨" :
@@ -213,22 +215,23 @@ count:loc.count
          <div key={i}>
 
         <Circle
-          center={[loc.lat,loc.lon]}
-          radius={300 + loc.count * 200}
-          pathOptions={{
-          color: loc.count > 5 ? "#ff0000" :
-                 loc.count > 3 ? "#ff8800" :
-                 loc.count > 1 ? "#ffee00" :
-                 "#66ccff",
-
-          fillColor: loc.count > 5 ? "#ff0000" :
-                     loc.count > 3 ? "#ff8800" :
-                     loc.count > 1 ? "#ffee00" :
-                     "#66ccff",
-
-          fillOpacity:0.35
-         }}
-       />
+          {...({
+            center: [loc.lat, loc.lon],
+            radius: 300 + loc.count * 200,
+            pathOptions: {
+             color: loc.count > 5 ? "#ff0000" :
+                    loc.count > 3 ? "#ff8800" :
+                    loc.count > 1 ? "#ffee00" :
+                    "#66ccff",
+             fillColor: loc.count > 5 ? "#ff0000" :
+                    loc.count > 3 ? "#ff8800" :
+                    loc.count > 1 ? "#ffee00" :
+                    "#66ccff",
+             fillOpacity: 0.35
+           }
+        } as any)}
+      />
+          
           <Marker
             key={i}
             position={[loc.lat,loc.lon]}
