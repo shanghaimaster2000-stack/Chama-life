@@ -6,7 +6,7 @@ const SpeechRecognition =
     ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     : null;
 
-let recognition = null;
+let recognition: any = null;
 
 if (SpeechRecognition) {
   recognition = new SpeechRecognition();
