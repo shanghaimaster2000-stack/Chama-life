@@ -53,7 +53,7 @@ useEffect(()=>{
 
 
 
-const routeCounts = {};
+const routeCounts: Record<string, any> = {};
 
 for(let i=1;i<logs.length;i++){
 
@@ -97,7 +97,7 @@ return [start,midPoint,end];
 
 }
 
-const locationCounts = {};
+const locationCounts: Record<string, any> = {};
 
 logs.forEach((log)=>{
   const key = log.lat + "," + log.lon;
