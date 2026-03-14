@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 const SpeechRecognition =
   typeof window !== "undefined"
-    ? window.SpeechRecognition || window.webkitSpeechRecognition
+    ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     : null;
 
 let recognition = null;
