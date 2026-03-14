@@ -158,7 +158,6 @@ count:loc.count
       {position && (
       <MapContainer
         bounds={bounds}
-        maxZoom={12}
         style={{ height:"100vh", width:"100%" }}
       >
 
