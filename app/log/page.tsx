@@ -1,44 +1,56 @@
 "use client";
 import { useState } from "react";
+import type { ChamaLog, LogType } from "../types";
+
+function createLogId() {
+  if (
+    typeof window !== "undefined" &&
+    window.crypto &&
+    typeof window.crypto.randomUUID === "function"
+  ) {
+    return window.crypto.randomUUID();
+  }
+
+  return `log-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+}
 
 export default function LogPage(){
-const [today, setToday] = useState("");
-const [type,setType] = useState("restaurant");
+const [type, setType] = useState<LogType>("restaurant");
 const [name,setName] = useState("");
 const [price,setPrice] = useState("");
 const [rating,setRating] = useState("");
 
-function saveLog(){
+function saveLog() {
+  navigator.geolocation.getCurrentPosition((pos) => {
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
 
-navigator.geolocation.getCurrentPosition((pos)=>{
+    const newLog: ChamaLog = {
+      id: crypto.randomUUID(),
+      lat,
+      lon,
+      type,
+      name,
+      price: price ? Number(price) : null,
+      rating: rating ? Number(rating) : null,
+      comment: "",
+      genre: "",
+      memo: "",
+      visitedAt: new Date().toISOString()
+    };
 
-const lat = pos.coords.latitude;
-const lon = pos.coords.longitude;
+    let logs: ChamaLog[] = [];
 
-const newLog = {
-lat,
-lon,
-type,
-name,
-price: Number(price),
-rating: Number(rating),
-visitedAt: new Date().toISOString()
-};
+    if (typeof window !== "undefined") {
+      logs = JSON.parse(localStorage.getItem("chamaLogs") || "[]");
+    }
 
-let logs:any[] = [];
+    logs.push(newLog);
 
-if(typeof window !== "undefined"){
-logs = JSON.parse(localStorage.getItem("chamaLogs") || "[]");
-}
+    localStorage.setItem("chamaLogs", JSON.stringify(logs));
 
-logs.push(newLog);
-
-localStorage.setItem("chamaLogs",JSON.stringify(logs));
-
-alert("保存したよ🍜");
-
-});
-
+    alert("保存したよ🍜");
+  });
 }
 
 return(
