@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import type { ChamaLog, FoodGenre } from "./types";
+import type { ChamaLog, FoodGenre } from "./type";
 
 function getPollenLevel(temp: number, humidity: number, wind: number) {
   if (temp < 10) return "少ない";
