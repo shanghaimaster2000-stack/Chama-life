@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import type { ChamaLog, FoodGenre } from "./type";
+import type { ChamaLog, FoodGenre } from "./types";
 
 function getPollenLevel(temp: number, humidity: number, wind: number) {
   if (temp < 10) return "少ない";
@@ -53,6 +53,8 @@ export default function Home() {
   const [editingSavedLog, setEditingSavedLog] = useState(false);
   const [ratingInput, setRatingInput] = useState("");
   const [priceInput, setPriceInput] = useState("");
+  const [nameInput, setNameInput] = useState("");
+  const [commentInput, setCommentInput] = useState("");
   // どのフィールドを音声入力中か ("name"|"price"|"comment"|null)
   const [fieldRecording, setFieldRecording] = useState<string | null>(null);
   const [today, setToday] = useState("");
@@ -91,13 +93,16 @@ export default function Home() {
 
     rec.onresult = (event: any) => {
       if (isIOS) {
-        // iOSは累積しないよう最後の結果だけ取る
+        // iOSは累積しないよう最後の結果だけ取る、かつ確定済みなら無視
         const last = event.results[event.results.length - 1];
         const transcript = last[0].transcript;
-        if (last.isFinal) {
+        if (last.isFinal && !latestTranscriptRef.current) {
+          // 初回の確定結果のみ採用（2回目以降は無視）
           latestTranscriptRef.current = transcript;
+          setVoiceText(transcript);
+        } else if (!last.isFinal) {
+          setVoiceText(transcript);
         }
-        setVoiceText(transcript);
       } else {
         let finalTranscript = "";
         let interimTranscript = "";
@@ -192,6 +197,7 @@ export default function Home() {
       setVoiceText("");
       latestTranscriptRef.current = "";
       isRecognitionEndedRef.current = false;
+      setVoiceText("");
       try {
         rec.start();
         setRecording(true);
@@ -237,13 +243,13 @@ export default function Home() {
         .replace(/。/g, " ").replace(/　/g, " ").replace(/\s+/g, " ")
         .replace(/吉在門/g, "吉左衛門").replace(/一覧/g, "一蘭")
         .replace(/8日/g, "評価").trim();
-      if (field === "name" && savedLog) {
+      if (field === "name") {
         // 店名は最初のスペース区切りの単語だけ使う
         const shopOnly = normalized.split(" ")[0];
-        setSavedLog(s => s ? { ...s, name: shopOnly } : s);
-      } else if (field === "comment" && savedLog) {
+        setNameInput(shopOnly);
+      } else if (field === "comment") {
         // 感想は全文そのまま
-        setSavedLog(s => s ? { ...s, comment: normalized } : s);
+        setCommentInput(normalized);
       }
       latestTranscriptRef.current = "";
       setFieldRecording(null);
@@ -265,6 +271,8 @@ export default function Home() {
       .replace(/テン/g, ".")
       .replace(/てん/g, ".")
       // iOS Safari の誤認識パターン
+      .replace(/ご縁/g, "円")            // 「円」が「ご縁」になる
+      .replace(/五円/g, "円")
       .replace(/一覧/g, "一蘭")          // 「一蘭」が「一覧」になる
       .replace(/8日/g, "評価")           // 「評価」が「8日」になる
       .replace(/8にち/g, "評価")
@@ -570,6 +578,8 @@ export default function Home() {
                   if (!editingSavedLog) {
                     setRatingInput(savedLog.rating !== null ? String(savedLog.rating) : "");
                     setPriceInput(savedLog.price !== null ? String(savedLog.price) : "");
+                    setNameInput(savedLog.name || "");
+                    setCommentInput(savedLog.comment || "");
                   }
                   setEditingSavedLog(!editingSavedLog);
                 }}
@@ -616,7 +626,7 @@ export default function Home() {
                 <div style={{ marginTop: "10px" }}>
                   店名
                   <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <input value={savedLog.name || ""} onChange={(e) => setSavedLog({ ...savedLog, name: e.target.value })} style={{ flex: 1 }} />
+                    <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} style={{ flex: 1 }} autoComplete="off" />
                     <button onClick={() => startFieldRecording("name")} disabled={!!fieldRecording}
                       style={{ padding: "4px 8px", fontSize: "16px", border: "none", background: "transparent", touchAction: "manipulation", opacity: fieldRecording ? 0.4 : 1 }}>🎤</button>
                   </div>
@@ -641,7 +651,7 @@ export default function Home() {
                 <div style={{ marginTop: "10px" }}>
                   感想
                   <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <input value={savedLog.comment || ""} onChange={(e) => setSavedLog({ ...savedLog, comment: e.target.value })} style={{ flex: 1 }} />
+                    <input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} style={{ flex: 1 }} autoComplete="off" />
                     <button onClick={() => startFieldRecording("comment")} disabled={!!fieldRecording}
                       style={{ padding: "4px 8px", fontSize: "16px", border: "none", background: "transparent", touchAction: "manipulation", opacity: fieldRecording ? 0.4 : 1 }}>🎤</button>
                   </div>
@@ -653,6 +663,8 @@ export default function Home() {
                     const parsedRating = ratingInput === "" ? null : Number(ratingInput);
                     const updatedLog = {
                       ...savedLog,
+                      name: nameInput || savedLog.name,
+                      comment: commentInput,
                       price: isNaN(parsedPrice as number) ? savedLog.price : parsedPrice,
                       rating: isNaN(parsedRating as number) ? savedLog.rating : parsedRating,
                     };
