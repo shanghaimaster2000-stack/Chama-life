@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import type { ChamaLog, FoodGenre } from "./type";
+import { analyzeVoiceInput } from "./lib/analyzeVoiceInput";
 
 function getPollenLevel(temp: number, humidity: number, wind: number) {
   if (temp < 10) return "少ない";
@@ -39,6 +40,7 @@ export default function Home() {
     comment: string;
     genre: FoodGenre;
     memo: string;
+    logType: "restaurant" | "hotel" | "spot" | "schedule" | "memo" | "unknown";
   } | null>(null);
   const [confirmSave, setConfirmSave] = useState(false);
   const [savedLog, setSavedLog] = useState<{
@@ -49,6 +51,7 @@ export default function Home() {
     genre: FoodGenre;
     memo: string;
     id: string;
+    logType: "restaurant" | "hotel" | "spot" | "schedule" | "memo" | "unknown";
   } | null>(null);
   const [editingSavedLog, setEditingSavedLog] = useState(false);
   const [ratingInput, setRatingInput] = useState("");
@@ -126,7 +129,7 @@ export default function Home() {
         setRecording(false);
         const transcript = latestTranscriptRef.current;
         if (transcript) {
-          analyzeFoodLog(transcript);
+          handleVoiceResult(transcript);
         }
       }
     };
@@ -256,213 +259,49 @@ export default function Home() {
     }, 400);
   }
 
-  // --- 以下の関数群は変更なし ---
 
-  function normalizeVoiceText(text: string) {
-    return text
-      .replace(/，/g, ",")
-      .replace(/．/g, ".")
-      .replace(/。/g, " ")
-      .replace(/　/g, " ")
-      .replace(/\s+/g, " ")
-      .replace(/えん/g, "円")
-      .replace(/苑/g, "円")
-      .replace(/まんえん/g, "万円")
-      .replace(/テン/g, ".")
-      .replace(/てん/g, ".")
-      // iOS Safari の誤認識パターン
-      .replace(/ご縁/g, "円")            // 「円」が「ご縁」になる
-      .replace(/五円/g, "円")
-      .replace(/一覧/g, "一蘭")          // 「一蘭」が「一覧」になる
-      .replace(/8日/g, "評価")           // 「評価」が「8日」になる
-      .replace(/8にち/g, "評価")
-      .replace(/はーぶす/gi, "ハーブス")
-      .replace(/harbs/gi, "ハーブス")
-      .replace(/いちらん/gi, "一蘭")
-      .replace(/スターバック/g, "スターバックス")
-      .replace(/スタバックス/g, "スターバックス")
-      .replace(/スター バックス/g, "スターバックス")
-      .replace(/プランニュー酒場/g, "ブランニュー酒場")
-      .replace(/1大門/g, "吉左衛門")
-      .replace(/一大門/g, "吉左衛門")
-      .replace(/吉在門/g, "吉左衛門")
-      .replace(/きちざえもん/g, "吉左衛門")
-      .replace(/吉左衛門/g, "吉左衛門")  // 正規化
-      .trim();
+    // 万能音声入力ハンドラー（analyzeVoiceInputに委譲）
+  function handleVoiceResult(text: string) {
+    const result = analyzeVoiceInput(text, placeName);
+
+    if (result.type === "restaurant") {
+      setFoodLog({ name: result.name, price: result.price, rating: result.rating,
+        comment: result.comment, genre: result.genre, memo: result.memo, logType: "restaurant" });
+      setConfirmSave(true);
+      return;
+    }
+    if (result.type === "hotel") {
+      setFoodLog({ name: result.name, price: result.price, rating: result.rating,
+        comment: result.comment, genre: "other", memo: result.memo, logType: "hotel" });
+      setConfirmSave(true);
+      return;
+    }
+    if (result.type === "spot") {
+      setFoodLog({ name: result.name, price: result.price, rating: result.rating,
+        comment: result.comment, genre: "other", memo: result.memo, logType: "spot" });
+      setConfirmSave(true);
+      return;
+    }
+    if (result.type === "schedule" || result.type === "memo" || result.type === "unknown") {
+      setFoodLog({
+        name: result.type === "schedule" ? result.title : "メモ",
+        price: null, rating: null, comment: "", genre: "other",
+        memo: result.memo, logType: result.type,
+      });
+      setConfirmSave(true);
+    }
   }
 
-  function parseJapaneseNumber(text: string) {
-    const normalized = text.replace(/,/g, "").trim();
-    if (/^\d+(\.\d+)?$/.test(normalized)) return Number(normalized);
-    const digitMap: Record<string, number> = {
-      零: 0, 〇: 0, 一: 1, 二: 2, 三: 3, 四: 4,
-      五: 5, 六: 6, 七: 7, 八: 8, 九: 9
-    };
-    let total = 0;
-    let current = 0;
-    for (const char of normalized) {
-      if (char in digitMap) {
-        current = digitMap[char];
-      } else if (char === "十") { total += (current || 1) * 10; current = 0; }
-      else if (char === "百") { total += (current || 1) * 100; current = 0; }
-      else if (char === "千") { total += (current || 1) * 1000; current = 0; }
-      else if (char === "万") { total = (total + (current || 0)) * 10000; current = 0; }
-      else return null;
+  // 種別ラベル・アイコン取得
+  function getLogTypeLabel(logType: string) {
+    switch (logType) {
+      case "restaurant": return { icon: "🍜", label: "外食ログ" };
+      case "hotel":      return { icon: "🏨", label: "宿泊ログ" };
+      case "spot":       return { icon: "📍", label: "観光ログ" };
+      case "schedule":   return { icon: "📅", label: "予定" };
+      case "memo":       return { icon: "📝", label: "メモ" };
+      default:           return { icon: "📌", label: "ログ" };
     }
-    return total + current;
-  }
-
-  function normalizeShopName(text: string) {
-    const shopAliases = [
-      { canonical: "ハーブス", aliases: ["ハーブス", "HARBS", "はーぶす", "harbs"] },
-      { canonical: "一蘭", aliases: ["一蘭", "いちらん"] },
-      { canonical: "スターバックス", aliases: ["スターバックス", "スタバ", "スターバック", "スタバックス", "スター バックス"] },
-      { canonical: "亀寿司", aliases: ["亀寿司", "亀寿し", "かめずし"] },
-      { canonical: "ブランニュー酒場", aliases: ["ブランニュー酒場", "プランニュー酒場"] },
-      { canonical: "吉左衛門", aliases: ["吉左衛門", "1大門", "一大門", "きちざえもん"] }
-    ];
-    for (const shop of shopAliases) {
-      if (shop.aliases.some((alias) => text.includes(alias))) return shop.canonical;
-    }
-    return "";
-  }
-
-  function detectGenre(text: string): FoodGenre {
-    const genreRules = [
-      { genre: "ramen", keywords: ["ラーメン", "中華そば", "つけ麺"] },
-      { genre: "sushi", keywords: ["寿司", "寿し", "すし", "鮨"] },
-      { genre: "yakiniku", keywords: ["焼肉"] },
-      { genre: "yakitori", keywords: ["焼鳥", "焼き鳥"] },
-      { genre: "horumon", keywords: ["ホルモン"] },
-      { genre: "nabe", keywords: ["鍋", "もつ鍋", "しゃぶしゃぶ", "すき焼き"] },
-      { genre: "teppanyaki", keywords: ["鉄板焼"] },
-      { genre: "okonomiyaki", keywords: ["お好み焼", "たこ焼"] },
-      { genre: "kushikatsu", keywords: ["串カツ", "串揚げ"] },
-      { genre: "tonkatsu", keywords: ["トンカツ", "とんかつ", "カツ"] },
-      { genre: "curry", keywords: ["カレー"] },
-      { genre: "donburi", keywords: ["丼", "親子丼", "牛丼", "海鮮丼"] },
-      { genre: "udon_soba", keywords: ["うどん", "蕎麦", "そば"] },
-      { genre: "kaiseki_kappo", keywords: ["懐石", "割烹", "会席"] },
-      { genre: "set_meal", keywords: ["定食", "御膳"] },
-      { genre: "izakaya", keywords: ["居酒屋", "酒場", "バル"] },
-      { genre: "japanese", keywords: ["和食", "天ぷら", "うなぎ"] },
-      { genre: "french", keywords: ["フレンチ", "ビストロ"] },
-      { genre: "italian", keywords: ["イタリアン", "パスタ", "ピザ"] },
-      { genre: "western", keywords: ["洋食", "ハンバーグ", "オムライス"] },
-      { genre: "chinese", keywords: ["中華", "餃子", "麻婆", "炒飯"] },
-      { genre: "thai", keywords: ["タイ料理", "ガパオ", "トムヤム"] },
-      { genre: "indian", keywords: ["インド料理", "ナン", "キーマ"] },
-      { genre: "asian_other", keywords: ["ベトナム", "韓国料理", "アジア料理"] },
-      { genre: "cafe", keywords: ["カフェ", "コーヒー", "喫茶"] },
-      { genre: "sweets", keywords: ["ケーキ", "クレープ", "パフェ", "スイーツ", "タルト"] },
-      { genre: "bakery", keywords: ["パン", "ベーカリー", "クロワッサン"] },
-      { genre: "fast_food", keywords: ["マクドナルド", "バーガー", "ファストフード"] }
-    ];
-    for (const rule of genreRules) {
-      if (rule.keywords.some((k) => text.includes(k))) return rule.genre as FoodGenre;
-    }
-    return "other";
-  }
-
-  function detectComment(text: string) {
-    const commentHints = ["美味しかった","美味しい","うまかった","うまい","最高","残念","微妙","良かった","また行きたい","もう行かない","おいしかった"];
-    for (const hint of commentHints) {
-      if (text.includes(hint)) {
-        const beforeHint = text.split(hint)[0]
-          .replace(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(円|万円)/g, "")
-          .replace(/[一二三四五六七八九十百千万〇零]+円/g, "")
-          .replace(/評価\s*[0-9]+(?:\.[0-9]+)?/g, "")
-          .replace(/ハーブス|一蘭|スターバックス|スタバ|亀寿司|ブランニュー酒場/g, "")
-          .trim();
-        return `${beforeHint}${hint}`.trim();
-      }
-    }
-    // 感想キーワードが見つからなければ空文字（全文を感想にしない）
-    return "";
-  }
-
-  function analyzeFoodLog(text: string) {
-    const normalized = normalizeVoiceText(text);
-    if (!normalized) return;
-
-    let shop = "";
-    let price: number | null = null;
-    let rating: number | null = null;
-    let comment = "";
-    let genre: FoodGenre = "other";
-
-    const shopFromWholeText = normalizeShopName(normalized);
-    if (shopFromWholeText) shop = shopFromWholeText;
-
-    const numericPriceMatch = normalized.match(/([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(円|万円)/);
-    if (numericPriceMatch) {
-      const value = Number(numericPriceMatch[1].replace(/,/g, ""));
-      price = numericPriceMatch[2] === "万円" ? value * 10000 : value;
-    } else {
-      const japanesePriceMatch = normalized.match(/([一二三四五六七八九十百千万〇零]+)\s*(円)/);
-      if (japanesePriceMatch) {
-        const parsed = parseJapaneseNumber(japanesePriceMatch[1]);
-        if (parsed !== null) price = parsed;
-      }
-    }
-
-    const ratingMatch =
-      normalized.match(/(?:評価|ひょうか|8日)\s*([0-9]+(?:\.[0-9]+)?)/) ||
-      normalized.match(/([0-9]+(?:\.[0-9]+)?)\s*点/);
-    if (ratingMatch) rating = Number(ratingMatch[1]);
-
-    genre = detectGenre(normalized);
-    // shop名を除去してからcomment検出（店名が感想に混入しないように）
-    const textForComment = shop
-      ? normalized.replace(shop, "").trim()
-      : normalized;
-    comment = detectComment(textForComment);
-
-    if (!shop) {
-      let shopCandidate = normalized
-        .replace(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(円|万円)/g, "")
-        .replace(/[一二三四五六七八九十百千万〇零]+\s*(円)/g, "")
-        .replace(/(?:評価|ひょうか|8日)\s*[0-9]+(?:\.[0-9]+)?/g, "")
-        .replace(/[0-9]+(?:\.[0-9]+)?\s*点/g, "");
-
-      if (comment) shopCandidate = shopCandidate.replace(comment, "");
-
-      const genreWords = ["ラーメン","中華そば","つけ麺","寿司","寿し","すし","鮨","焼肉","焼鳥","焼き鳥","ホルモン","鍋","もつ鍋","しゃぶしゃぶ","すき焼き","鉄板焼","お好み焼","たこ焼","串カツ","串揚げ","トンカツ","とんかつ","カレー","丼","親子丼","牛丼","海鮮丼","うどん","蕎麦","そば","居酒屋","酒場","バル","和食","天ぷら","うなぎ","フレンチ","ビストロ","イタリアン","パスタ","ピザ","洋食","ハンバーグ","オムライス","中華","餃子","麻婆","炒飯","タイ料理","ガパオ","トムヤム","インド料理","ナン","キーマ","ベトナム","韓国料理","アジア料理","カフェ","コーヒー","喫茶","ケーキ","クレープ","パフェ","スイーツ","タルト","パン","ベーカリー","クロワッサン","マクドナルド","バーガー","ファストフード"];
-      for (const word of genreWords) shopCandidate = shopCandidate.replace(word, "");
-      shopCandidate = shopCandidate.trim();
-
-      const normalizedCandidate = normalizeShopName(shopCandidate);
-      if (normalizedCandidate) {
-        shop = normalizedCandidate;
-      } else if (shopCandidate.length > 0) {
-        shop = shopCandidate.split(" ")[0];
-      }
-    }
-
-    if (!shop && placeName) shop = placeName;
-    if (!shop) {
-      const firstWord = normalized.split(" ")[0]?.trim();
-      if (firstWord) shop = firstWord;
-    }
-
-    // memoは「店名 / 価格 / 評価 / 感想」の要約にする（全文ではなく）
-    const memoParts = [
-      shop || "名称未設定",
-      price !== null ? `${price.toLocaleString()}円` : null,
-      rating !== null ? `評価${rating}` : null,
-      comment || null
-    ].filter(Boolean) as string[];
-
-    setFoodLog({
-      name: shop || "名称未設定",
-      price,
-      rating,
-      comment,
-      genre,
-      memo: memoParts.join(" / ")
-    });
-
-    setConfirmSave(true);
   }
 
   const card = {
@@ -540,7 +379,7 @@ export default function Home() {
 
         {foodLog && !savedLog && (
           <div style={card}>
-            🍜 外食ログ（確認中）
+            {foodLog && (() => { const {icon, label} = getLogTypeLabel(foodLog.logType); return `${icon} ${label}（確認中）`; })()}
             <div style={{ marginTop: "10px" }}>
               店名
               <input value={foodLog.name || ""} onChange={(e) => setFoodLog({ ...foodLog, name: e.target.value })} style={{ width: "100%" }} />
@@ -572,7 +411,9 @@ export default function Home() {
         {savedLog && (
           <div style={{ ...card, borderLeft: "4px solid #ff4d6d" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontWeight: "bold", fontSize: "15px" }}>🍜 最新の外食ログ</span>
+              <span style={{ fontWeight: "bold", fontSize: "15px" }}>
+                {savedLog && (() => { const {icon, label} = getLogTypeLabel(savedLog.logType); return `${icon} 最新の${label}`; })()}
+              </span>
               <button
                 onClick={() => {
                   if (!editingSavedLog) {
@@ -752,7 +593,7 @@ export default function Home() {
           }}
         >
           <div style={{ fontSize: "16px", marginBottom: "10px" }}>
-            この外食ログ保存する？
+            {foodLog && (() => { const {icon, label} = getLogTypeLabel(foodLog.logType); return `${icon} この${label}を保存する？`; })()}
           </div>
           <div style={{ fontSize: "14px" }}>{foodLog.memo}</div>
           <div style={{ marginTop: "12px" }}>
@@ -765,7 +606,8 @@ export default function Home() {
                   : { country: "", prefecture: "", city: "" };
                 const newLog: ChamaLog = {
                   id: createLogId(),
-                  type: "restaurant",
+                  type: (["restaurant","hotel","spot","work"].includes(foodLog.logType)
+                    ? foodLog.logType : "restaurant") as ChamaLog["type"],
                   name: foodLog.name,
                   price: foodLog.price,
                   rating: foodLog.rating,
@@ -781,7 +623,7 @@ export default function Home() {
                 };
                 logs.push(newLog);
                 localStorage.setItem("chamaLogs", JSON.stringify(logs));
-                setSavedLog({ ...foodLog, id: newLog.id });
+                setSavedLog({ ...foodLog, id: newLog.id, logType: foodLog.logType });
                 setEditingSavedLog(false);
                 setConfirmSave(false);
                 setFoodLog(null);
