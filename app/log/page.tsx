@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import type { ChamaLog, LogType } from "../../type"; // ✅ パス修正（sなし）
+import type { ChamaLog, LogType } from "../type"; // ✅ パス修正（sなし）
 
 function createLogId() {
   if (
