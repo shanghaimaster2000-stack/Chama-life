@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { ChamaLog, LogType } from "../../type"; // ✅ パス修正
+import type { ChamaLog, LogType } from "../type"; // ✅ パス修正
 
 type SortOption =
   | "visitedAt_desc"
