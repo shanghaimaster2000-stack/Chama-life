@@ -183,7 +183,7 @@ export default function Home() {
   // ✅ マイクボタンのタップ処理
   function handleMicTap() {
     const rec = recognitionRef.current;
-    if (!rec) return;
+    if (!rec || fieldRecording) return; // フィールド録音中は無効
 
     if (!recording) {
       // 録音開始
@@ -229,21 +229,21 @@ export default function Home() {
     isRecognitionEndedRef.current = false; // analyzeFoodLogは呼ばせない
     try { rec.stop(); } catch (e) { /* ignore */ }
 
-    // onresultで取れた最新テキストをそのまま該当フィールドへ
+    // onresultで取れた最新テキストを該当フィールドへ
     setTimeout(() => {
       const transcript = latestTranscriptRef.current;
       if (!transcript) { setFieldRecording(null); return; }
+      const normalized = transcript
+        .replace(/。/g, " ").replace(/　/g, " ").replace(/\s+/g, " ")
+        .replace(/吉在門/g, "吉左衛門").replace(/一覧/g, "一蘭")
+        .replace(/8日/g, "評価").trim();
       if (field === "name" && savedLog) {
-        setSavedLog(s => s ? { ...s, name: transcript } : s);
+        // 店名は最初のスペース区切りの単語だけ使う
+        const shopOnly = normalized.split(" ")[0];
+        setSavedLog(s => s ? { ...s, name: shopOnly } : s);
       } else if (field === "comment" && savedLog) {
-        setSavedLog(s => s ? { ...s, comment: transcript } : s);
-      } else if (field === "price") {
-        // 価格は数字だけ抽出
-        const m = transcript.match(/([0-9,]+)/);
-        if (m) setPriceInput(m[1].replace(/,/g, ""));
-      } else if (field === "rating") {
-        const m = transcript.match(/([0-9]+(?:\.[0-9]+)?)/);
-        if (m) setRatingInput(m[1]);
+        // 感想は全文そのまま
+        setSavedLog(s => s ? { ...s, comment: normalized } : s);
       }
       latestTranscriptRef.current = "";
       setFieldRecording(null);
@@ -632,17 +632,11 @@ export default function Home() {
                       inputMode="numeric"
                     />
                     <span>円</span>
-                    <button onClick={() => startFieldRecording("price")} disabled={!!fieldRecording}
-                      style={{ padding: "4px 8px", fontSize: "16px", border: "none", background: "transparent", touchAction: "manipulation", opacity: fieldRecording ? 0.4 : 1 }}>🎤</button>
                   </div>
                 </div>
                 <div style={{ marginTop: "10px" }}>
                   評価
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <input value={ratingInput} onChange={(e) => setRatingInput(e.target.value)} style={{ flex: 1 }} type="text" inputMode="decimal" />
-                    <button onClick={() => startFieldRecording("rating")} disabled={!!fieldRecording}
-                      style={{ padding: "4px 8px", fontSize: "16px", border: "none", background: "transparent", touchAction: "manipulation", opacity: fieldRecording ? 0.4 : 1 }}>🎤</button>
-                  </div>
+                  <input value={ratingInput} onChange={(e) => setRatingInput(e.target.value)} style={{ width: "100%" }} type="text" inputMode="decimal" />
                 </div>
                 <div style={{ marginTop: "10px" }}>
                   感想
