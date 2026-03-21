@@ -1,7 +1,6 @@
 /**
  * restaurantHandler.ts
  * 飲食店ログの音声入力解析ハンドラー
- * 入力例: 「飲食 一蘭天王寺店 1800円 美味しかった 評価3.5」
  */
 
 import type { FoodGenre } from "../../type";
@@ -49,6 +48,9 @@ const NON_RESTAURANT_KEYWORDS = [
   "ホテル", "旅館", "宿泊", "チェックイン", "チェックアウト", "泊まった",
 ];
 
+// 店名の終端パターン（これで終わる単語は店名として扱う）
+const SHOP_SUFFIX_PATTERN = /^.+?(店|支店|本店|分店|号店|館|亭|屋|楼|苑|園|堂|庵|処|所|邸)$/;
+
 export type RestaurantResult = {
   type: "restaurant";
   name: string;
@@ -70,35 +72,53 @@ function detectGenre(text: string): FoodGenre {
 
 /**
  * 店名を抽出する
- * 「一蘭天王寺店」→「一蘭天王寺店」（店舗名として丸ごと取得）
- * スペース区切りで最初のトークンを店名とする
+ * 「一蘭阿倍野店 1800円」→「一蘭阿倍野店」
+ * 「一蘭 阿倍野店 1800円」→「一蘭 阿倍野店」（2トークンが店名）
  */
 function extractShopName(text: string, placeName?: string): string {
   // 辞書マッチを先に試みる
   const fromDict = normalizeShopName(text);
   if (fromDict) return fromDict;
 
-  // 価格・評価・ジャンルワードを除去した残りの最初のトークンを店名とする
+  // 数値情報・評価・同行者を除去
   let candidate = text
     .replace(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(円|万円)/g, "")
     .replace(/[一二三四五六七八九十百千万〇零]+\s*円/g, "")
     .replace(/(?:評価|ひょうか)\s*[0-9]+(?:\.[0-9]+)?/g, "")
     .replace(/[0-9]+(?:\.[0-9]+)?\s*点/g, "")
-    .replace(/同行者.+?(?:計\s*[0-9]+\s*[人名]|$)/g, "");
+    .replace(/同行者.+/g, "")
+    .replace(/\s+/g, " ").trim();
 
-  // ジャンルワードを除去（ただし店名の一部になってる場合は残す）
-  // 例: 「天王寺店 ラーメン食べた」→「天王寺店」を残す
-  for (const word of ALL_GENRE_WORDS) {
-    // ジャンルワードの前後にスペースがある場合のみ除去
-    candidate = candidate.replace(new RegExp(`(^|\\s)${word}(\\s|$)`, 'g'), ' ');
+  // ジャンルワードをスペース区切りで除去（単独トークンのみ）
+  const tokens = candidate.split(" ");
+  const filteredTokens: string[] = [];
+  for (const token of tokens) {
+    const isGenreWord = ALL_GENRE_WORDS.includes(token);
+    if (!isGenreWord) filteredTokens.push(token);
   }
 
-  candidate = candidate.replace(/\s+/g, " ").trim();
+  if (filteredTokens.length === 0) {
+    return placeName || "名称未設定";
+  }
 
-  // 最初の単語を店名として返す
-  const firstToken = candidate.split(" ")[0] || "";
+  // 「〇〇店」「〇〇亭」などで終わるトークンが連続している場合は全部店名とみなす
+  // 例: ["一蘭", "阿倍野店", "チャーシュー麺", "美味しかった"]
+  //   → "一蘭 阿倍野店" が店名
+  let shopTokens: string[] = [filteredTokens[0]];
 
-  if (firstToken) return firstToken;
+  for (let i = 1; i < filteredTokens.length; i++) {
+    const token = filteredTokens[i];
+    // 次のトークンが「〇〇店」系のサフィックスで終わる場合は店名に追加
+    if (SHOP_SUFFIX_PATTERN.test(token)) {
+      shopTokens.push(token);
+    } else {
+      break;
+    }
+  }
+
+  // ただし最初のトークン自体が「〇〇店」で終わる場合はそれだけで店名
+  const shopName = shopTokens.join(" ");
+  if (shopName) return shopName;
   if (placeName) return placeName;
   return "名称未設定";
 }
@@ -109,10 +129,10 @@ export function analyzeRestaurant(rawText: string, placeName?: string): Restaura
   // 同行者を先に抽出
   const { companions, totalPeople, cleanText } = extractCompanions(normalized);
 
-  const price  = extractPrice(cleanText);
-  const rating = extractRating(cleanText);
-  const genre  = detectGenre(cleanText);
-  const shop   = extractShopName(cleanText, placeName);
+  const price   = extractPrice(cleanText);
+  const rating  = extractRating(cleanText);
+  const genre   = detectGenre(cleanText);
+  const shop    = extractShopName(cleanText, placeName);
   const comment = extractComment(cleanText, shop, ALL_GENRE_WORDS);
 
   const memoParts = [
