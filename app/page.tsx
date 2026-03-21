@@ -86,6 +86,11 @@ export default function Home() {
   // どのフィールドを音声入力中か ("name"|"price"|"comment"|null)
   const [fieldRecording, setFieldRecording] = useState<string | null>(null);
   const [today, setToday] = useState("");
+  // 位置検索
+  const [searchedLocation, setSearchedLocation] = useState<{
+    lat: number; lon: number; address: string;
+  } | null>(null);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
 
   // ✅ 修正①: recognition を useRef で管理（グローバル変数をやめる）
   const recognitionRef = useRef<any>(null);
@@ -246,6 +251,40 @@ export default function Home() {
       } catch (e) {
         console.error("stop error:", e);
       }
+    }
+  }
+
+  // 施設名で位置を検索（Nominatim API）
+  async function searchLocation(name: string) {
+    if (!name) return;
+    setIsSearchingLocation(true);
+    setSearchedLocation(null);
+    try {
+      const query = encodeURIComponent(name + " 日本");
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&addressdetails=1`,
+        { headers: { "Accept-Language": "ja" } }
+      );
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const r = data[0];
+        const addr = r.address || {};
+        const addressStr = [
+          addr.country, addr.state, addr.city || addr.town || addr.village,
+          addr.road, r.display_name.split(",")[0]
+        ].filter(Boolean).slice(0, 3).join(" ");
+        setSearchedLocation({
+          lat: parseFloat(r.lat),
+          lon: parseFloat(r.lon),
+          address: addressStr,
+        });
+      } else {
+        alert("位置が見つかりませんでした。店名をもう少し詳しく入力してみてください。");
+      }
+    } catch (e) {
+      alert("位置検索に失敗しました。");
+    } finally {
+      setIsSearchingLocation(false);
     }
   }
 
@@ -849,18 +888,50 @@ export default function Home() {
             {foodLog && (() => { const {icon, label} = getLogTypeLabel(foodLog.logType); return `${icon} この${label}を保存する？`; })()}
           </div>
           <div style={{ fontSize: "14px" }}>{foodLog.memo}</div>
+
+          {/* 位置検索 */}
+          {!["memo","schedule"].includes(foodLog.logType) && (
+            <div style={{ marginTop: "10px" }}>
+              {searchedLocation ? (
+                <div style={{ fontSize: "12px", color: "#333", background: "#f0fff4",
+                  padding: "6px 8px", borderRadius: "6px", marginBottom: "4px" }}>
+                  📍 {searchedLocation.address}
+                  <button onClick={() => setSearchedLocation(null)}
+                    style={{ marginLeft: "8px", fontSize: "10px", border: "none",
+                      background: "transparent", color: "#999", cursor: "pointer" }}>✕</button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => searchLocation(foodLog.name)}
+                  disabled={isSearchingLocation}
+                  style={{ width: "100%", padding: "6px", fontSize: "12px",
+                    borderRadius: "6px", border: "1px solid #ddd",
+                    background: "#f8f8f8", cursor: "pointer", touchAction: "manipulation" }}
+                >
+                  {isSearchingLocation ? "🔍 検索中..." : `🔍 「${foodLog.name}」の位置を検索`}
+                </button>
+              )}
+            </div>
+          )}
+
           <div style={{ marginTop: "12px" }}>
             <button
               onClick={async () => {
                 if (!foodLog) return;
                 const logs: ChamaLog[] = JSON.parse(localStorage.getItem("chamaLogs") || "[]");
-                const address = location
-                  ? await getAddressFromLatLon(location.lat, location.lon)
-                  : { country: "", prefecture: "", city: "" };
+                // 検索済み位置 > GPS位置 の優先順位
+                const finalLat = searchedLocation?.lat ?? location?.lat;
+                const finalLon = searchedLocation?.lon ?? location?.lon;
+                const address = searchedLocation
+                  ? { country: "", prefecture: "", city: searchedLocation.address }
+                  : location
+                    ? await getAddressFromLatLon(location.lat, location.lon)
+                    : { country: "", prefecture: "", city: "" };
                 const newLog: ChamaLog = {
                   id: createLogId(),
-                  type: (["restaurant","hotel","spot","work"].includes(foodLog.logType)
-                    ? foodLog.logType : "restaurant") as ChamaLog["type"],
+                  type: (["restaurant","hotel","sightseeing","leisure","sports","watching",
+                    "live","hospital","pharmacy","shopping","ceremony","work"]
+                    .includes(foodLog.logType) ? foodLog.logType : "restaurant") as ChamaLog["type"],
                   name:        foodLog.name,
                   price:       foodLog.price,
                   rating:      foodLog.rating,
@@ -870,8 +941,8 @@ export default function Home() {
                   totalPeople: foodLog.totalPeople,
                   itemsBought: foodLog.itemsBought,
                   memo:        foodLog.memo,
-                  lat:         location?.lat,
-                  lon:         location?.lon,
+                  lat:         finalLat,
+                  lon:         finalLon,
                   country:     address.country,
                   prefecture:  address.prefecture,
                   city:        address.city,
@@ -883,7 +954,7 @@ export default function Home() {
                 setEditingSavedLog(false);
                 setConfirmSave(false);
                 setFoodLog(null);
-                alert("保存しました！");
+                setSearchedLocation(null);
               }}
               style={{
                 marginRight: "10px", padding: "6px 12px",
