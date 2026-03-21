@@ -27,7 +27,7 @@ function getTypeLabel(type: LogType) {
   const labels: Record<LogType, string> = {
     restaurant: "🍜 外食",
     hotel: "🏨 ホテル",
-    spot: "📍 観光",
+    sightseeing: "🗼 観光",
     work: "💼 仕事"
   };
   return labels[type] ?? "その他";
