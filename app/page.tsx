@@ -256,6 +256,7 @@ export default function Home() {
 
   // 施設名で位置を検索（Nominatim API）- 複数候補対応
   const [locationCandidates, setLocationCandidates] = useState<{lat:number;lon:number;address:string}[]>([]);
+  const [locationSearchQuery, setLocationSearchQuery] = useState("");
 
   async function searchLocation(name: string) {
     if (!name) return;
@@ -263,32 +264,14 @@ export default function Home() {
     setSearchedLocation(null);
     setLocationCandidates([]);
     try {
-      const query = encodeURIComponent(name + " 日本");
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=5&addressdetails=1`,
-        { headers: { "Accept-Language": "ja" } }
-      );
+      const q = encodeURIComponent(locationSearchQuery || name);
+      const res = await fetch(`/api/location-search?q=${q}`);
       const data = await res.json();
-      if (data && data.length > 0) {
-        const candidates = data.map((r: any) => {
-          const addr = r.address || {};
-          const parts = [
-            addr.country,
-            addr.state,
-            addr.city || addr.town || addr.village || addr.suburb,
-            addr.road || addr.neighbourhood,
-            r.display_name.split(",")[0],
-          ].filter(Boolean);
-          return {
-            lat: parseFloat(r.lat),
-            lon: parseFloat(r.lon),
-            address: parts.slice(0, 4).join(" "),
-          };
-        });
-        if (candidates.length === 1) {
-          setSearchedLocation(candidates[0]);
+      if (data.candidates && data.candidates.length > 0) {
+        if (data.candidates.length === 1) {
+          setSearchedLocation(data.candidates[0]);
         } else {
-          setLocationCandidates(candidates);
+          setLocationCandidates(data.candidates);
         }
       } else {
         alert("位置が見つかりませんでした。店名をもう少し詳しく入力してみてください。");
@@ -299,6 +282,7 @@ export default function Home() {
       setIsSearchingLocation(false);
     }
   }
+
 
   // フィールド個別の音声入力
   function startFieldRecording(field: string) {
@@ -934,15 +918,29 @@ export default function Home() {
                       cursor: "pointer", touchAction: "manipulation" }}>キャンセル</button>
                 </div>
               ) : (
-                <button
-                  onClick={() => searchLocation(foodLog.name)}
-                  disabled={isSearchingLocation}
-                  style={{ width: "100%", padding: "6px", fontSize: "12px",
-                    borderRadius: "6px", border: "1px solid #ddd",
-                    background: "#f8f8f8", cursor: "pointer", touchAction: "manipulation" }}
-                >
-                  {isSearchingLocation ? "🔍 検索中..." : `🔍 「${foodLog.name}」の位置を検索`}
-                </button>
+                <div>
+                  <div style={{ display: "flex", gap: "4px", marginBottom: "4px" }}>
+                    <input
+                      value={locationSearchQuery || foodLog.name}
+                      onChange={e => setLocationSearchQuery(e.target.value)}
+                      placeholder="店名・住所で検索"
+                      style={{ flex: 1, padding: "5px 8px", fontSize: "12px",
+                        borderRadius: "6px", border: "1px solid #ddd" }}
+                    />
+                    <button
+                      onClick={() => searchLocation(foodLog.name)}
+                      disabled={isSearchingLocation}
+                      style={{ padding: "5px 10px", fontSize: "12px", borderRadius: "6px",
+                        border: "none", background: "#ff4d6d", color: "white",
+                        cursor: "pointer", touchAction: "manipulation", whiteSpace: "nowrap" }}
+                    >
+                      {isSearchingLocation ? "..." : "🔍"}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#999" }}>
+                    例: 「大阪市阿倍野区 一蘭」のように詳しく入力すると精度UP
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -989,6 +987,7 @@ export default function Home() {
                 setFoodLog(null);
                 setSearchedLocation(null);
                 setLocationCandidates([]);
+                setLocationSearchQuery("");
               }}
               style={{
                 marginRight: "10px", padding: "6px 12px",
@@ -1000,7 +999,7 @@ export default function Home() {
               YES
             </button>
             <button
-              onClick={() => { setConfirmSave(false); setFoodLog(null); setSearchedLocation(null); setLocationCandidates([]); }}
+              onClick={() => { setConfirmSave(false); setFoodLog(null); setSearchedLocation(null); setLocationCandidates([]); setLocationSearchQuery(""); }}
               style={{
                 padding: "6px 12px",
                 userSelect: "none", WebkitUserSelect: "none",
