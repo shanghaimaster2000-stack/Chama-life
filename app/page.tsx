@@ -254,32 +254,46 @@ export default function Home() {
     }
   }
 
-  // 施設名で位置を検索（Nominatim API）
+  // 施設名で位置を検索（Nominatim API）- 複数候補対応
+  const [locationCandidates, setLocationCandidates] = useState<{lat:number;lon:number;address:string}[]>([]);
+
   async function searchLocation(name: string) {
     if (!name) return;
     setIsSearchingLocation(true);
     setSearchedLocation(null);
+    setLocationCandidates([]);
     try {
       const query = encodeURIComponent(name + " 日本");
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&addressdetails=1`,
+        `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=5&addressdetails=1`,
         { headers: { "Accept-Language": "ja" } }
       );
       const data = await res.json();
       if (data && data.length > 0) {
-        const r = data[0];
-        const addr = r.address || {};
-        const addressStr = [
-          addr.country, addr.state, addr.city || addr.town || addr.village,
-          addr.road, r.display_name.split(",")[0]
-        ].filter(Boolean).slice(0, 3).join(" ");
-        setSearchedLocation({
-          lat: parseFloat(r.lat),
-          lon: parseFloat(r.lon),
-          address: addressStr,
+        const candidates = data.map((r: any) => {
+          const addr = r.address || {};
+          const parts = [
+            addr.country,
+            addr.state,
+            addr.city || addr.town || addr.village || addr.suburb,
+            addr.road || addr.neighbourhood,
+            r.display_name.split(",")[0],
+          ].filter(Boolean);
+          return {
+            lat: parseFloat(r.lat),
+            lon: parseFloat(r.lon),
+            address: parts.slice(0, 4).join(" "),
+          };
         });
+        if (candidates.length === 1) {
+          setSearchedLocation(candidates[0]);
+        } else {
+          setLocationCandidates(candidates);
+        }
       } else {
-        alert("位置が見つかりませんでした。店名をもう少し詳しく入力してみてください。");
+        alert("位置が見つかりませんでした。
+「一蘭 天王寺」のように
+スペースを入れて試してみてください。");
       }
     } catch (e) {
       alert("位置検索に失敗しました。");
@@ -893,12 +907,33 @@ export default function Home() {
           {!["memo","schedule"].includes(foodLog.logType) && (
             <div style={{ marginTop: "10px" }}>
               {searchedLocation ? (
-                <div style={{ fontSize: "12px", color: "#333", background: "#f0fff4",
-                  padding: "6px 8px", borderRadius: "6px", marginBottom: "4px" }}>
-                  📍 {searchedLocation.address}
-                  <button onClick={() => setSearchedLocation(null)}
-                    style={{ marginLeft: "8px", fontSize: "10px", border: "none",
-                      background: "transparent", color: "#999", cursor: "pointer" }}>✕</button>
+                <div style={{ fontSize: "12px", color: "#2d7a2d", background: "#f0fff4",
+                  padding: "6px 8px", borderRadius: "6px", marginBottom: "4px",
+                  display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>📍 {searchedLocation.address}</span>
+                  <button onClick={() => { setSearchedLocation(null); setLocationCandidates([]); }}
+                    style={{ fontSize: "10px", border: "none", background: "transparent",
+                      color: "#999", cursor: "pointer", padding: "0 4px" }}>✕</button>
+                </div>
+              ) : locationCandidates.length > 0 ? (
+                <div style={{ background: "#f8f8f8", borderRadius: "6px",
+                  border: "1px solid #ddd", overflow: "hidden" }}>
+                  <div style={{ fontSize: "11px", color: "#666", padding: "4px 8px",
+                    borderBottom: "1px solid #eee" }}>候補を選んでください</div>
+                  {locationCandidates.map((c, i) => (
+                    <button key={i}
+                      onClick={() => { setSearchedLocation(c); setLocationCandidates([]); }}
+                      style={{ width: "100%", padding: "6px 8px", fontSize: "12px",
+                        textAlign: "left", border: "none", borderBottom: i < locationCandidates.length-1 ? "1px solid #eee" : "none",
+                        background: "transparent", cursor: "pointer", color: "#333",
+                        touchAction: "manipulation" }}>
+                      📍 {c.address}
+                    </button>
+                  ))}
+                  <button onClick={() => setLocationCandidates([])}
+                    style={{ width: "100%", padding: "4px", fontSize: "11px",
+                      border: "none", background: "#f0f0f0", color: "#999",
+                      cursor: "pointer", touchAction: "manipulation" }}>キャンセル</button>
                 </div>
               ) : (
                 <button
@@ -955,6 +990,7 @@ export default function Home() {
                 setConfirmSave(false);
                 setFoodLog(null);
                 setSearchedLocation(null);
+                setLocationCandidates([]);
               }}
               style={{
                 marginRight: "10px", padding: "6px 12px",
@@ -966,7 +1002,7 @@ export default function Home() {
               YES
             </button>
             <button
-              onClick={() => { setConfirmSave(false); setFoodLog(null); }}
+              onClick={() => { setConfirmSave(false); setFoodLog(null); setSearchedLocation(null); setLocationCandidates([]); }}
               style={{
                 padding: "6px 12px",
                 userSelect: "none", WebkitUserSelect: "none",

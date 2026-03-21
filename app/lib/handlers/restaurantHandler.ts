@@ -1,7 +1,7 @@
 /**
  * restaurantHandler.ts
  * 飲食店ログの音声入力解析ハンドラー
- * 入力例: 「飲食 一蘭 1800円 美味しかった 評価3.5 同行者キーちゃん計2人」
+ * 入力例: 「飲食 一蘭天王寺店 1800円 美味しかった 評価3.5」
  */
 
 import type { FoodGenre } from "../../type";
@@ -43,6 +43,12 @@ const GENRE_RULES: { genre: FoodGenre; keywords: string[] }[] = [
 
 const ALL_GENRE_WORDS = GENRE_RULES.flatMap((r) => r.keywords);
 
+const NON_RESTAURANT_KEYWORDS = [
+  "観光", "見学", "訪問", "訪れた", "神社", "寺", "城", "博物館", "美術館",
+  "公園", "展望台", "テーマパーク", "水族館", "動物園", "世界遺産",
+  "ホテル", "旅館", "宿泊", "チェックイン", "チェックアウト", "泊まった",
+];
+
 export type RestaurantResult = {
   type: "restaurant";
   name: string;
@@ -62,34 +68,51 @@ function detectGenre(text: string): FoodGenre {
   return "other";
 }
 
+/**
+ * 店名を抽出する
+ * 「一蘭天王寺店」→「一蘭天王寺店」（店舗名として丸ごと取得）
+ * スペース区切りで最初のトークンを店名とする
+ */
+function extractShopName(text: string, placeName?: string): string {
+  // 辞書マッチを先に試みる
+  const fromDict = normalizeShopName(text);
+  if (fromDict) return fromDict;
+
+  // 価格・評価・ジャンルワードを除去した残りの最初のトークンを店名とする
+  let candidate = text
+    .replace(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(円|万円)/g, "")
+    .replace(/[一二三四五六七八九十百千万〇零]+\s*円/g, "")
+    .replace(/(?:評価|ひょうか)\s*[0-9]+(?:\.[0-9]+)?/g, "")
+    .replace(/[0-9]+(?:\.[0-9]+)?\s*点/g, "")
+    .replace(/同行者.+?(?:計\s*[0-9]+\s*[人名]|$)/g, "");
+
+  // ジャンルワードを除去（ただし店名の一部になってる場合は残す）
+  // 例: 「天王寺店 ラーメン食べた」→「天王寺店」を残す
+  for (const word of ALL_GENRE_WORDS) {
+    // ジャンルワードの前後にスペースがある場合のみ除去
+    candidate = candidate.replace(new RegExp(`(^|\\s)${word}(\\s|$)`, 'g'), ' ');
+  }
+
+  candidate = candidate.replace(/\s+/g, " ").trim();
+
+  // 最初の単語を店名として返す
+  const firstToken = candidate.split(" ")[0] || "";
+
+  if (firstToken) return firstToken;
+  if (placeName) return placeName;
+  return "名称未設定";
+}
+
 export function analyzeRestaurant(rawText: string, placeName?: string): RestaurantResult {
   const normalized = normalizeText(rawText);
 
-  // 同行者を先に抽出してテキストから除去
+  // 同行者を先に抽出
   const { companions, totalPeople, cleanText } = extractCompanions(normalized);
 
-  let shop     = normalizeShopName(cleanText);
   const price  = extractPrice(cleanText);
   const rating = extractRating(cleanText);
   const genre  = detectGenre(cleanText);
-
-  if (!shop) {
-    let candidate = cleanText
-      .replace(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(円|万円)/g, "")
-      .replace(/[一二三四五六七八九十百千万〇零]+\s*円/g, "")
-      .replace(/(?:評価|ひょうか)\s*[0-9]+(?:\.[0-9]+)?/g, "")
-      .replace(/[0-9]+(?:\.[0-9]+)?\s*点/g, "");
-
-    for (const word of ALL_GENRE_WORDS) candidate = candidate.replace(word, "");
-    candidate = candidate.trim();
-
-    const fromAlias = normalizeShopName(candidate);
-    shop = fromAlias || candidate.split(" ")[0] || "";
-  }
-
-  if (!shop && placeName) shop = placeName;
-  if (!shop) shop = cleanText.split(" ")[0] || "名称未設定";
-
+  const shop   = extractShopName(cleanText, placeName);
   const comment = extractComment(cleanText, shop, ALL_GENRE_WORDS);
 
   const memoParts = [
@@ -101,5 +124,15 @@ export function analyzeRestaurant(rawText: string, placeName?: string): Restaura
     totalPeople !== null ? `計${totalPeople}人` : null,
   ].filter(Boolean) as string[];
 
-  return { type: "restaurant", name: shop, price, rating, comment, genre, companions, totalPeople, memo: memoParts.join(" / ") };
+  return {
+    type: "restaurant",
+    name: shop,
+    price,
+    rating,
+    comment,
+    genre,
+    companions,
+    totalPeople,
+    memo: memoParts.join(" / "),
+  };
 }
