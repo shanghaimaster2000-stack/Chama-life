@@ -5,7 +5,11 @@
  */
 
 import { normalizeText, extractPrice, extractRating, extractComment, extractCompanions } from "../normalize";
-import type { SpotGenre } from "../../type";
+
+export type SpotGenre =
+  | "shrine_temple" | "castle" | "museum" | "park"
+  | "theme_park" | "aquarium" | "zoo" | "stadium"
+  | "cinema" | "onsen" | "nature" | "other";
 
 const SPOT_GENRE_RULES: { genre: SpotGenre; keywords: string[] }[] = [
   { genre: "shrine_temple", keywords: ["神社", "寺", "お寺", "仏閣", "神宮"] },
