@@ -1094,7 +1094,7 @@ export default function Home() {
         onMouseDown={(e) => e.preventDefault()}
         className="no-select"
         style={{
-          position: "fixed", bottom: "20px", left: "50%",
+          position: "fixed", bottom: "80px", left: "50%",
           transform: "translateX(-50%)",
           width: "80px", height: "80px", borderRadius: "50%",
           background: recording ? "#ff2d55" : "#ff4d6d",
