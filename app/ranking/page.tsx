@@ -24,11 +24,19 @@ function formatDate(dateString: string) {
 }
 
 function getTypeLabel(type: LogType) {
-  const labels: Record<LogType, string> = {
-    restaurant: "🍜 外食",
-    hotel: "🏨 ホテル",
+  const labels: Partial<Record<LogType, string>> = {
+    restaurant:  "🍜 外食",
+    hotel:       "🏨 ホテル",
     sightseeing: "🗼 観光",
-    work: "💼 仕事"
+    work:        "💼 仕事",
+    leisure:     "🎡 レジャー",
+    sports:      "⚽ スポーツ",
+    watching:    "🏟️ 観戦",
+    live:        "🎵 ライブ",
+    hospital:    "🏥 病院",
+    pharmacy:    "💊 薬局",
+    shopping:    "🛍️ 買物",
+    ceremony:    "💐 冠婚葬祭",
   };
   return labels[type] ?? "その他";
 }
