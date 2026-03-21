@@ -291,9 +291,7 @@ export default function Home() {
           setLocationCandidates(candidates);
         }
       } else {
-        alert("位置が見つかりませんでした。
-「一蘭 天王寺」のように
-スペースを入れて試してみてください。");
+        alert("位置が見つかりませんでした。店名をもう少し詳しく入力してみてください。");
       }
     } catch (e) {
       alert("位置検索に失敗しました。");
