@@ -1,27 +1,11 @@
 /**
  * hotelHandler.ts
  * 宿泊施設ログの音声入力解析ハンドラー
+ * 入力例: 「宿泊 ヒルトン大阪 15000円 快適だった 評価4.2 同行者キーちゃん計2人」
  */
 
-import { normalizeText, extractPrice, extractRating } from "../normalize";
-
-// -----------------------------------------------
-// 宿泊施設タイプキーワード辞書
-// -----------------------------------------------
-const HOTEL_KEYWORDS = [
-  "ホテル", "旅館", "宿", "宿泊", "チェックイン", "チェックアウト",
-  "泊まった", "泊まる", "泊", "inn", "hotel", "resort", "リゾート",
-  "ペンション", "民宿", "ゲストハウス", "カプセル", "ビジネスホテル",
-];
-
-export type HotelGenre =
-  | "business_hotel"
-  | "ryokan"
-  | "resort"
-  | "guesthouse"
-  | "capsule"
-  | "pension"
-  | "other";
+import type { HotelGenre } from "../../type";
+import { normalizeText, extractPrice, extractRating, extractComment, extractCompanions } from "../normalize";
 
 const HOTEL_GENRE_RULES: { genre: HotelGenre; keywords: string[] }[] = [
   { genre: "ryokan",         keywords: ["旅館", "温泉宿", "和室"] },
@@ -32,9 +16,11 @@ const HOTEL_GENRE_RULES: { genre: HotelGenre; keywords: string[] }[] = [
   { genre: "business_hotel", keywords: ["ビジネスホテル", "ホテル", "hotel"] },
 ];
 
-const COMMENT_HINTS = [
-  "良かった", "最高", "残念", "微妙", "快適", "不満", "また泊まりたい",
-  "きれい", "汚かった", "広かった", "狭かった", "おすすめ",
+const ALL_HOTEL_WORDS = HOTEL_GENRE_RULES.flatMap(r => r.keywords);
+
+const HOTEL_REMOVE_WORDS = [
+  ...ALL_HOTEL_WORDS,
+  "チェックイン", "チェックアウト", "泊まった", "宿泊した",
 ];
 
 export type HotelResult = {
@@ -44,12 +30,10 @@ export type HotelResult = {
   rating: number | null;
   comment: string;
   genre: HotelGenre;
+  companions: string;
+  totalPeople: number | null;
   memo: string;
 };
-
-export function isHotel(text: string): boolean {
-  return HOTEL_KEYWORDS.some((kw) => text.includes(kw));
-}
 
 function detectHotelGenre(text: string): HotelGenre {
   for (const rule of HOTEL_GENRE_RULES) {
@@ -58,47 +42,47 @@ function detectHotelGenre(text: string): HotelGenre {
   return "other";
 }
 
-function detectComment(text: string): string {
-  for (const hint of COMMENT_HINTS) {
-    if (text.includes(hint)) return hint;
-  }
-  return "";
-}
-
 export function analyzeHotel(rawText: string): HotelResult {
   const normalized = normalizeText(rawText);
 
-  const price   = extractPrice(normalized);
-  const rating  = extractRating(normalized);
-  const genre   = detectHotelGenre(normalized);
-  const comment = detectComment(normalized);
+  const { companions, totalPeople, cleanText } = extractCompanions(normalized);
 
-  // 施設名の抽出: キーワードの前にある単語を施設名とみなす
+  const price  = extractPrice(cleanText);
+  const rating = extractRating(cleanText);
+  const genre  = detectHotelGenre(cleanText);
+
+  // 施設名: ホテルジャンルキーワードの前の単語
   let name = "";
-  for (const kw of HOTEL_KEYWORDS) {
-    const idx = normalized.indexOf(kw);
+  for (const kw of ALL_HOTEL_WORDS) {
+    const idx = cleanText.indexOf(kw);
     if (idx > 0) {
-      const before = normalized.slice(0, idx).trim();
+      const before = cleanText.slice(0, idx).trim();
       name = before.split(" ").pop() || "";
       break;
     }
   }
-  if (!name) name = normalized.split(" ")[0] || "名称未設定";
+
+  // キーワードが先頭にない場合は最初の単語
+  if (!name) {
+    let candidate = cleanText
+      .replace(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(円|万円)/g, "")
+      .replace(/(?:評価|ひょうか)\s*[0-9]+(?:\.[0-9]+)?/g, "")
+      .replace(/[0-9]+(?:\.[0-9]+)?\s*点/g, "");
+    for (const word of HOTEL_REMOVE_WORDS) candidate = candidate.replace(word, "");
+    candidate = candidate.trim();
+    name = candidate.split(" ")[0] || "名称未設定";
+  }
+
+  const comment = extractComment(cleanText, name, HOTEL_REMOVE_WORDS);
 
   const memoParts = [
     name,
-    price  !== null ? `${price.toLocaleString()}円` : null,
-    rating !== null ? `評価${rating}` : null,
-    comment || null,
+    price       !== null ? `${price.toLocaleString()}円` : null,
+    rating      !== null ? `評価${rating}` : null,
+    comment     || null,
+    companions  ? `同行者:${companions}` : null,
+    totalPeople !== null ? `計${totalPeople}人` : null,
   ].filter(Boolean) as string[];
 
-  return {
-    type: "hotel",
-    name,
-    price,
-    rating,
-    comment,
-    genre,
-    memo: memoParts.join(" / "),
-  };
+  return { type: "hotel", name, price, rating, comment, genre, companions, totalPeople, memo: memoParts.join(" / ") };
 }

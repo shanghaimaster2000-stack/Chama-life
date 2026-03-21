@@ -1,41 +1,27 @@
 /**
  * spotHandler.ts
  * 観光地・スポットログの音声入力解析ハンドラー
+ * 入力例: 「観光 東京タワー 1500円 値段ちょっと高い 評価3.1 同行者キーちゃん計2人」
  */
 
-import { normalizeText, extractPrice, extractRating } from "../normalize";
-
-const SPOT_KEYWORDS = [
-  "観光", "見学", "訪問", "行った", "行ってきた", "来た", "訪れた",
-  "神社", "寺", "お寺", "城", "博物館", "美術館", "公園", "展望台",
-  "テーマパーク", "水族館", "動物園", "遊園地", "名所", "スポット",
-  "世界遺産", "温泉", "海", "山", "滝", "湖",
-];
-
-export type SpotGenre =
-  | "shrine_temple"
-  | "castle"
-  | "museum"
-  | "park"
-  | "theme_park"
-  | "nature"
-  | "onsen"
-  | "other";
+import { normalizeText, extractPrice, extractRating, extractComment, extractCompanions } from "../normalize";
+import type { SpotGenre } from "../../type";
 
 const SPOT_GENRE_RULES: { genre: SpotGenre; keywords: string[] }[] = [
   { genre: "shrine_temple", keywords: ["神社", "寺", "お寺", "仏閣", "神宮"] },
   { genre: "castle",        keywords: ["城", "お城"] },
   { genre: "museum",        keywords: ["博物館", "美術館", "記念館", "資料館"] },
   { genre: "park",          keywords: ["公園", "庭園", "植物園"] },
-  { genre: "theme_park",    keywords: ["テーマパーク", "遊園地", "水族館", "動物園"] },
+  { genre: "theme_park",    keywords: ["テーマパーク", "遊園地"] },
+  { genre: "aquarium",      keywords: ["水族館"] },
+  { genre: "zoo",           keywords: ["動物園"] },
+  { genre: "stadium",       keywords: ["スタジアム", "球場", "競技場", "アリーナ"] },
+  { genre: "cinema",        keywords: ["映画館", "映画"] },
   { genre: "onsen",         keywords: ["温泉", "銭湯", "スパ"] },
-  { genre: "nature",        keywords: ["海", "山", "滝", "湖", "渓谷", "森"] },
+  { genre: "nature",        keywords: ["海", "山", "滝", "湖", "渓谷", "森", "展望台"] },
 ];
 
-const COMMENT_HINTS = [
-  "良かった", "最高", "残念", "微妙", "すごかった", "きれい", "感動",
-  "また来たい", "おすすめ", "混んでた", "空いてた",
-];
+const ALL_SPOT_WORDS = SPOT_GENRE_RULES.flatMap(r => r.keywords);
 
 export type SpotResult = {
   type: "spot";
@@ -44,11 +30,13 @@ export type SpotResult = {
   rating: number | null;
   comment: string;
   genre: SpotGenre;
+  companions: string;
+  totalPeople: number | null;
   memo: string;
 };
 
 export function isSpot(text: string): boolean {
-  return SPOT_KEYWORDS.some((kw) => text.includes(kw));
+  return ALL_SPOT_WORDS.some((kw) => text.includes(kw));
 }
 
 function detectSpotGenre(text: string): SpotGenre {
@@ -58,47 +46,35 @@ function detectSpotGenre(text: string): SpotGenre {
   return "other";
 }
 
-function detectComment(text: string): string {
-  for (const hint of COMMENT_HINTS) {
-    if (text.includes(hint)) return hint;
-  }
-  return "";
-}
-
 export function analyzeSpot(rawText: string): SpotResult {
   const normalized = normalizeText(rawText);
 
-  const price   = extractPrice(normalized);
-  const rating  = extractRating(normalized);
-  const genre   = detectSpotGenre(normalized);
-  const comment = detectComment(normalized);
+  const { companions, totalPeople, cleanText } = extractCompanions(normalized);
 
-  // スポット名: キーワードの前の単語を名称とみなす
-  let name = "";
-  for (const kw of SPOT_KEYWORDS) {
-    const idx = normalized.indexOf(kw);
-    if (idx > 0) {
-      const before = normalized.slice(0, idx).trim();
-      name = before.split(" ").pop() || "";
-      break;
-    }
-  }
-  if (!name) name = normalized.split(" ")[0] || "名称未設定";
+  const price  = extractPrice(cleanText);
+  const rating = extractRating(cleanText);
+  const genre  = detectSpotGenre(cleanText);
+
+  // 施設名: 最初の単語（価格・評価・ジャンルワード除去後）
+  let candidate = cleanText
+    .replace(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(円|万円)/g, "")
+    .replace(/(?:評価|ひょうか)\s*[0-9]+(?:\.[0-9]+)?/g, "")
+    .replace(/[0-9]+(?:\.[0-9]+)?\s*点/g, "");
+
+  for (const word of ALL_SPOT_WORDS) candidate = candidate.replace(word, "");
+  candidate = candidate.replace(/\s+/g, " ").trim();
+  const name = candidate.split(" ")[0] || "名称未設定";
+
+  const comment = extractComment(cleanText, name, ALL_SPOT_WORDS);
 
   const memoParts = [
     name,
-    price  !== null ? `${price.toLocaleString()}円` : null,
-    rating !== null ? `評価${rating}` : null,
-    comment || null,
+    price       !== null ? `${price.toLocaleString()}円` : null,
+    rating      !== null ? `評価${rating}` : null,
+    comment     || null,
+    companions  ? `同行者:${companions}` : null,
+    totalPeople !== null ? `計${totalPeople}人` : null,
   ].filter(Boolean) as string[];
 
-  return {
-    type: "spot",
-    name,
-    price,
-    rating,
-    comment,
-    genre,
-    memo: memoParts.join(" / "),
-  };
+  return { type: "spot", name, price, rating, comment, genre, companions, totalPeople, memo: memoParts.join(" / ") };
 }

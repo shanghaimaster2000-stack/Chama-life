@@ -14,7 +14,7 @@ const MISRECOGNITION_PATTERNS: [RegExp, string][] = [
   [/えん/g,         "円"],
   [/苑/g,           "円"],
   [/まんえん/g,     "万円"],
-  [/8日/g,          "評価"],
+  [/(?<![0-9])8日/g, "評価"],  // 「28日」などは変換しない
   [/8にち/g,        "評価"],
   [/一覧/g,         "一蘭"],
   [/吉在門/g,       "吉左衛門"],
@@ -28,6 +28,22 @@ const MISRECOGNITION_PATTERNS: [RegExp, string][] = [
   [/スタバックス/g,  "スターバックス"],
   [/スター バックス/g, "スターバックス"],
   [/プランニュー酒場/g, "ブランニュー酒場"],
+  // 日付・曜日の誤認識パターン
+  [/未週/g,   "来週"],
+  [/来集/g,   "来週"],
+  [/らいしゅう/g, "来週"],
+  [/再来集/g, "再来週"],
+  // 医療・施設名の誤認識パターン
+  [/半医者/g, "歯医者"],
+  [/歯医者/g, "歯医者"],  // 正規化
+  // 同行者の誤認識パターン
+  [/投稿者/g,   "同行者"],
+  [/登校者/g,   "同行者"],
+  [/同行しゃ/g, "同行者"],
+  [/どうこうしゃ/g, "同行者"],
+  // 商品名の誤認識パターン
+  [/ピンス/g, "リンス"],
+  [/びんす/g, "リンス"],
 ];
 
 // -----------------------------------------------
@@ -63,6 +79,47 @@ export const COMMENT_HINTS = [
   "ふつう", "普通", "まあまあ", "悪くない", "そこそこ",
 ];
 
+
+/**
+ * テキストから感想を抽出する（残余テキスト方式）
+ * 評価・価格・店名・ジャンル・行動キーワード以外の残りを感想とみなす
+ */
+export function extractComment(
+  text: string,
+  shopName: string = "",
+  removeWords: string[] = []
+): string {
+  let candidate = text;
+
+  // 店名を除去
+  if (shopName) candidate = candidate.replace(shopName, "");
+
+  // 価格を除去
+  candidate = candidate
+    .replace(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(円|万円)/g, "")
+    .replace(/[一二三四五六七八九十百千万〇零]+\s*円/g, "");
+
+  // 評価を除去
+  candidate = candidate
+    .replace(/(?:評価|ひょうか)\s*[0-9]+(?:\.[0-9]+)?/g, "")
+    .replace(/[0-9]+(?:\.[0-9]+)?\s*点/g, "");
+
+  // 行動・場所キーワードを除去
+  const ACTION_WORDS = [
+    "観光", "見学", "訪問", "行った", "行ってきた", "来た", "訪れた",
+    "した", "してきた", "でした", "行きました",
+    "チェックイン", "チェックアウト", "宿泊", "泊まった",
+    "食べた", "食べてきた",
+  ];
+  for (const word of [...ACTION_WORDS, ...removeWords]) {
+    candidate = candidate.replace(word, "");
+  }
+
+  candidate = candidate.replace(/\s+/g, " ").trim();
+
+  // 残ったテキストが2文字以上なら感想とみなす
+  return candidate.length >= 2 ? candidate : "";
+}
 
 export function normalizeText(text: string): string {
   let result = text
@@ -155,4 +212,63 @@ export function normalizeShopName(text: string): string {
     }
   }
   return "";
+}
+
+/**
+ * 同行者情報を抽出する（合計人数は同行者数+自分1名で自動計算）
+ *
+ * パターン例:
+ *   「同行者キーちゃん1名」       → companions: "キーちゃん", totalPeople: 2 (1+自分)
+ *   「同行者キーちゃん家族3名」   → companions: "キーちゃん家族", totalPeople: 4 (3+自分)
+ *   「同行者池ちゃん他2名」       → companions: "池ちゃん他2名", totalPeople: 4 (1+2+自分)
+ *   「同行者キーちゃん計2人」     → companions: "キーちゃん", totalPeople: 2 (明示された合計)
+ */
+export function extractCompanions(text: string): {
+  companions: string;
+  totalPeople: number | null;
+  cleanText: string;
+} {
+  // 「同行者」がなければスキップ
+  if (!text.includes("同行者")) {
+    return { companions: "", totalPeople: null, cleanText: text };
+  }
+
+  // パターン1: 「同行者○○計N人/名」→ 合計人数が明示されている
+  const totalMatch = text.match(/同行者\s*(.+?)\s*(?:の)?計\s*([0-9]+)\s*[人名]/);
+  if (totalMatch) {
+    const companions = totalMatch[1].trim();
+    const totalPeople = Number(totalMatch[2]);
+    const cleanText = text.replace(totalMatch[0], "").trim();
+    return { companions, totalPeople, cleanText };
+  }
+
+  // パターン2: 「同行者○○他N名」→ メイン1人+他N人+自分
+  const otherMatch = text.match(/同行者\s*(.+?)\s*他\s*([0-9]+)\s*[人名]/);
+  if (otherMatch) {
+    const companions = `${otherMatch[1].trim()}他${otherMatch[2]}名`;
+    const otherCount = Number(otherMatch[2]);
+    const totalPeople = 1 + otherCount + 1; // メイン1人 + 他N人 + 自分
+    const cleanText = text.replace(otherMatch[0], "").trim();
+    return { companions, totalPeople, cleanText };
+  }
+
+  // パターン3: 「同行者○○N名/人」→ 同行者N名+自分1名
+  const countMatch = text.match(/同行者\s*(.+?)\s*([0-9]+)\s*[人名]/);
+  if (countMatch) {
+    const companions = countMatch[1].trim();
+    const companionCount = Number(countMatch[2]);
+    const totalPeople = companionCount + 1; // 同行者N名 + 自分
+    const cleanText = text.replace(countMatch[0], "").trim();
+    return { companions, totalPeople, cleanText };
+  }
+
+  // パターン4: 人数なし「同行者キーちゃん」→ 同行者1名+自分=計2名
+  const noCountMatch = text.match(/同行者\s*([^\s]+)/);
+  if (noCountMatch) {
+    const companions = noCountMatch[1].trim();
+    const cleanText = text.replace(noCountMatch[0], "").trim();
+    return { companions, totalPeople: 2, cleanText }; // 同行者1名+自分
+  }
+
+  return { companions: "", totalPeople: null, cleanText: text };
 }

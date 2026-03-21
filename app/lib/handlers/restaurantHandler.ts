@@ -1,10 +1,14 @@
 /**
  * restaurantHandler.ts
  * 飲食店ログの音声入力解析ハンドラー
+ * 入力例: 「飲食 一蘭 1800円 美味しかった 評価3.5 同行者キーちゃん計2人」
  */
 
 import type { FoodGenre } from "../../type";
-import { normalizeText, extractPrice, extractRating, normalizeShopName, COMMENT_HINTS } from "../normalize";
+import {
+  normalizeText, extractPrice, extractRating,
+  normalizeShopName, extractComment, extractCompanions
+} from "../normalize";
 
 const GENRE_RULES: { genre: FoodGenre; keywords: string[] }[] = [
   { genre: "ramen",        keywords: ["ラーメン", "中華そば", "つけ麺"] },
@@ -39,12 +43,6 @@ const GENRE_RULES: { genre: FoodGenre; keywords: string[] }[] = [
 
 const ALL_GENRE_WORDS = GENRE_RULES.flatMap((r) => r.keywords);
 
-const NON_RESTAURANT_KEYWORDS = [
-  "観光", "見学", "訪問", "訪れた", "神社", "寺", "城", "博物館", "美術館",
-  "公園", "展望台", "テーマパーク", "水族館", "動物園", "世界遺産",
-  "ホテル", "旅館", "宿泊", "チェックイン", "チェックアウト", "泊まった",
-];
-
 export type RestaurantResult = {
   type: "restaurant";
   name: string;
@@ -52,14 +50,10 @@ export type RestaurantResult = {
   rating: number | null;
   comment: string;
   genre: FoodGenre;
+  companions: string;
+  totalPeople: number | null;
   memo: string;
 };
-
-export function isRestaurant(text: string): boolean {
-  if (NON_RESTAURANT_KEYWORDS.some((kw) => text.includes(kw))) return false;
-  return ALL_GENRE_WORDS.some((word) => text.includes(word)) ||
-    COMMENT_HINTS.some((hint) => text.includes(hint));
-}
 
 function detectGenre(text: string): FoodGenre {
   for (const rule of GENRE_RULES) {
@@ -68,38 +62,24 @@ function detectGenre(text: string): FoodGenre {
   return "other";
 }
 
-function detectComment(text: string, shopName: string): string {
-  const textWithoutShop = shopName ? text.replace(shopName, "").trim() : text;
-  for (const hint of COMMENT_HINTS) {
-    if (textWithoutShop.includes(hint)) {
-      const beforeHint = textWithoutShop.split(hint)[0]
-        .replace(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(円|万円)/g, "")
-        .replace(/[一二三四五六七八九十百千万〇零]+円/g, "")
-        .replace(/評価\s*[0-9]+(?:\.[0-9]+)?/g, "")
-        .trim();
-      return `${beforeHint}${hint}`.trim();
-    }
-  }
-  return "";
-}
-
 export function analyzeRestaurant(rawText: string, placeName?: string): RestaurantResult {
   const normalized = normalizeText(rawText);
 
-  let shop     = normalizeShopName(normalized);
-  const price  = extractPrice(normalized);
-  const rating = extractRating(normalized);
-  const genre  = detectGenre(normalized);
-  const comment = detectComment(normalized, shop);
+  // 同行者を先に抽出してテキストから除去
+  const { companions, totalPeople, cleanText } = extractCompanions(normalized);
+
+  let shop     = normalizeShopName(cleanText);
+  const price  = extractPrice(cleanText);
+  const rating = extractRating(cleanText);
+  const genre  = detectGenre(cleanText);
 
   if (!shop) {
-    let candidate = normalized
+    let candidate = cleanText
       .replace(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(円|万円)/g, "")
       .replace(/[一二三四五六七八九十百千万〇零]+\s*円/g, "")
       .replace(/(?:評価|ひょうか)\s*[0-9]+(?:\.[0-9]+)?/g, "")
       .replace(/[0-9]+(?:\.[0-9]+)?\s*点/g, "");
 
-    if (comment) candidate = candidate.replace(comment, "");
     for (const word of ALL_GENRE_WORDS) candidate = candidate.replace(word, "");
     candidate = candidate.trim();
 
@@ -108,14 +88,18 @@ export function analyzeRestaurant(rawText: string, placeName?: string): Restaura
   }
 
   if (!shop && placeName) shop = placeName;
-  if (!shop) shop = normalized.split(" ")[0] || "名称未設定";
+  if (!shop) shop = cleanText.split(" ")[0] || "名称未設定";
+
+  const comment = extractComment(cleanText, shop, ALL_GENRE_WORDS);
 
   const memoParts = [
     shop,
-    price  !== null ? `${price.toLocaleString()}円` : null,
-    rating !== null ? `評価${rating}` : null,
-    comment || null,
+    price       !== null ? `${price.toLocaleString()}円` : null,
+    rating      !== null ? `評価${rating}` : null,
+    comment     || null,
+    companions  ? `同行者:${companions}` : null,
+    totalPeople !== null ? `計${totalPeople}人` : null,
   ].filter(Boolean) as string[];
 
-  return { type: "restaurant", name: shop, price, rating, comment, genre, memo: memoParts.join(" / ") };
+  return { type: "restaurant", name: shop, price, rating, comment, genre, companions, totalPeople, memo: memoParts.join(" / ") };
 }

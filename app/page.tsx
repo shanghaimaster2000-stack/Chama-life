@@ -2,6 +2,8 @@
 import { useEffect, useState, useRef } from "react";
 import type { ChamaLog, FoodGenre } from "./type";
 import { analyzeVoiceInput } from "./lib/analyzeVoiceInput";
+import { LOG_TYPE_CONFIG } from "./lib/handlers/genericLogHandler";
+import NavBar from "./components/NavBar";
 
 function getPollenLevel(temp: number, humidity: number, wind: number) {
   if (temp < 10) return "少ない";
@@ -38,9 +40,12 @@ export default function Home() {
     price: number | null;
     rating: number | null;
     comment: string;
-    genre: FoodGenre;
+    genre: string;
+    companions: string;
+    totalPeople: number | null;
+    itemsBought: string;
     memo: string;
-    logType: "restaurant" | "hotel" | "spot" | "schedule" | "memo" | "unknown";
+    logType: string;
   } | null>(null);
   const [confirmSave, setConfirmSave] = useState(false);
   const [savedLog, setSavedLog] = useState<{
@@ -48,16 +53,36 @@ export default function Home() {
     price: number | null;
     rating: number | null;
     comment: string;
-    genre: FoodGenre;
+    genre: string;
+    companions: string;
+    totalPeople: number | null;
+    itemsBought: string;
     memo: string;
     id: string;
-    logType: "restaurant" | "hotel" | "spot" | "schedule" | "memo" | "unknown";
+    logType: string;
   } | null>(null);
+  const [scheduleLog, setScheduleLog] = useState<{
+    title: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    memo: string;
+  } | null>(null);
+  const [confirmScheduleSave, setConfirmScheduleSave] = useState(false);
+  const [savedSchedules, setSavedSchedules] = useState<any[]>([]);
+  const [showAllSchedules, setShowAllSchedules] = useState(false);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const [savedMemos, setSavedMemos] = useState<any[]>([]);
+  const [showAllMemos, setShowAllMemos] = useState(false);
+  const [pendingMemo, setPendingMemo] = useState<any | null>(null);
+  const [confirmMemoSave, setConfirmMemoSave] = useState(false);
   const [editingSavedLog, setEditingSavedLog] = useState(false);
   const [ratingInput, setRatingInput] = useState("");
   const [priceInput, setPriceInput] = useState("");
   const [nameInput, setNameInput] = useState("");
   const [commentInput, setCommentInput] = useState("");
+  const [companionsInput, setCompanionsInput] = useState("");
+  const [totalPeopleInput, setTotalPeopleInput] = useState("");
   // どのフィールドを音声入力中か ("name"|"price"|"comment"|null)
   const [fieldRecording, setFieldRecording] = useState<string | null>(null);
   const [today, setToday] = useState("");
@@ -77,6 +102,12 @@ export default function Home() {
         weekday: "long"
       })
     );
+    // localStorageから予定を読み込む
+    const stored = JSON.parse(localStorage.getItem("chamaSchedules") || "[]");
+    setSavedSchedules(stored);
+    // localStorageからメモを読み込む
+    const storedMemos = JSON.parse(localStorage.getItem("chamaMemos") || "[]");
+    setSavedMemos(storedMemos);
   }, []);
 
   // recognition の初期化
@@ -266,42 +297,86 @@ export default function Home() {
 
     if (result.type === "restaurant") {
       setFoodLog({ name: result.name, price: result.price, rating: result.rating,
-        comment: result.comment, genre: result.genre, memo: result.memo, logType: "restaurant" });
+        comment: result.comment, genre: result.genre,
+        companions: result.companions, totalPeople: result.totalPeople,
+        itemsBought: "", memo: result.memo, logType: "restaurant" });
       setConfirmSave(true);
       return;
     }
     if (result.type === "hotel") {
       setFoodLog({ name: result.name, price: result.price, rating: result.rating,
-        comment: result.comment, genre: "other", memo: result.memo, logType: "hotel" });
+        comment: result.comment, genre: "other",
+        companions: result.companions, totalPeople: result.totalPeople,
+        itemsBought: "", memo: result.memo, logType: "hotel" });
       setConfirmSave(true);
       return;
     }
     if (result.type === "spot") {
       setFoodLog({ name: result.name, price: result.price, rating: result.rating,
-        comment: result.comment, genre: "other", memo: result.memo, logType: "spot" });
+        comment: result.comment, genre: "other",
+        companions: result.companions, totalPeople: result.totalPeople,
+        itemsBought: "", memo: result.memo, logType: "spot" });
       setConfirmSave(true);
       return;
     }
-    if (result.type === "schedule" || result.type === "memo" || result.type === "unknown") {
+    if (result.type === "schedule") {
+      const r = result as any;
+      setScheduleLog({
+        title: r.title, date: r.date,
+        startTime: r.startTime, endTime: r.endTime, memo: r.memo,
+      });
+      setConfirmScheduleSave(true);
+      return;
+    }
+    if (result.type === "memo") {
+      setPendingMemo({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        content: (result as any).content || result.memo,
+        reminder: false,
+        reminderType: "datetime",
+        reminderDatetime: "",
+        reminderDistance: 2,
+        createdAt: new Date().toISOString(),
+      });
+      setConfirmMemoSave(true);
+      return;
+    }
+    // 新カテゴリー（GenericLogResult）の処理
+    const genericTypes = ["leisure","sports","watching","live","hospital","pharmacy","shopping","ceremony"];
+    if (genericTypes.includes(result.type)) {
+      const r = result as any;
       setFoodLog({
-        name: result.type === "schedule" ? result.title : "メモ",
-        price: null, rating: null, comment: "", genre: "other",
-        memo: result.memo, logType: result.type,
+        name: r.name, price: r.price, rating: r.rating,
+        comment: r.comment, genre: r.genre || "other",
+        companions: r.companions || "", totalPeople: r.totalPeople ?? null,
+        itemsBought: r.itemsBought || "",
+        memo: r.memo, logType: result.type as any,
+      });
+      setConfirmSave(true);
+      return;
+    }
+    if (result.type === "unknown") {
+      setFoodLog({
+        name: "メモ", price: null, rating: null, comment: "", genre: "other",
+        companions: "", totalPeople: null, itemsBought: "",
+        memo: result.memo, logType: "memo" as any,
       });
       setConfirmSave(true);
     }
   }
 
-  // 種別ラベル・アイコン取得
+
+  // LOG_TYPE_CONFIGからラベル・アイコン・フィールド名を取得
   function getLogTypeLabel(logType: string) {
-    switch (logType) {
-      case "restaurant": return { icon: "🍜", label: "外食ログ" };
-      case "hotel":      return { icon: "🏨", label: "宿泊ログ" };
-      case "spot":       return { icon: "📍", label: "観光ログ" };
-      case "schedule":   return { icon: "📅", label: "予定" };
-      case "memo":       return { icon: "📝", label: "メモ" };
-      default:           return { icon: "📌", label: "ログ" };
-    }
+    const cfg = LOG_TYPE_CONFIG[logType];
+    if (cfg) return { icon: cfg.icon, label: cfg.label + "ログ" };
+    return { icon: "📌", label: "ログ" };
+  }
+
+  function getFieldLabels(logType: string) {
+    const cfg = LOG_TYPE_CONFIG[logType];
+    if (cfg) return { name: cfg.nameLabel, price: cfg.priceLabel || "料金" };
+    return { name: "名称", price: "料金" };
   }
 
   const card = {
@@ -324,7 +399,7 @@ export default function Home() {
         WebkitTouchCallout: "none"
       }}
     >
-      <main style={{ padding: "20px", paddingBottom: "90px" }}>
+      <main style={{ padding: "20px", paddingBottom: "130px" }}>
         <h1 style={{ textAlign: "center" }}>チャマLife</h1>
 
         <div style={{ textAlign: "center" }}>📅 {today}</div>
@@ -361,9 +436,125 @@ export default function Home() {
 
         {/* 今日の予定 */}
         <div style={card}>
-          📅 本日の予定
-          <div>予定はありません</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>📅 本日の予定</span>
+            <button
+              onClick={() => setShowAllSchedules(!showAllSchedules)}
+              style={{ fontSize: "12px", padding: "2px 8px", borderRadius: "6px",
+                border: "1px solid #ccc", background: "#f0f0f0", touchAction: "manipulation" }}
+            >
+              {showAllSchedules ? "閉じる" : "全て表示"}
+            </button>
+          </div>
+          {(() => {
+            const todayStr = new Date().toLocaleDateString("ja-JP",
+              { month: "numeric", day: "numeric" }).replace(/\//g, "月") + "日";
+            const todaySchedules = savedSchedules.filter((s: any) =>
+              s.date === todayStr || s.date === "今日"
+            );
+            if (todaySchedules.length === 0) {
+              return <div style={{ marginTop: "6px", fontSize: "14px", color: "#999" }}>今日の予定はありません</div>;
+            }
+            const displaySchedules = showAllSchedules ? todaySchedules : todaySchedules.slice(0, 3);
+            return displaySchedules.map((s: any) => (
+              <div key={s.id} style={{ marginTop: "6px", fontSize: "14px" }}>
+                {s.startTime && (
+                  <span style={{ color: "#ff4d6d", marginRight: "6px" }}>
+                    ⏰ {s.startTime}{s.endTime ? `〜${s.endTime}` : ""}
+                  </span>
+                )}
+                {s.title}
+              </div>
+            ));
+          })()}
         </div>
+
+        {/* 本日追加した新規予定 */}
+        {savedSchedules.length > 0 && (() => {
+          const latest = savedSchedules[savedSchedules.length - 1];
+          return (
+            <div style={{ ...card, borderLeft: "4px solid #5856d6" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontWeight: "bold", fontSize: "15px" }}>📋 本日追加した新規予定</span>
+                <button
+                  onClick={() => setEditingScheduleId(editingScheduleId === latest.id ? null : latest.id)}
+                  style={{ fontSize: "12px", padding: "4px 10px", borderRadius: "6px",
+                    border: "1px solid #ccc",
+                    background: editingScheduleId === latest.id ? "#5856d6" : "#f0f0f0",
+                    color: editingScheduleId === latest.id ? "white" : "#333",
+                    touchAction: "manipulation" }}
+                >
+                  {editingScheduleId === latest.id ? "閉じる" : "修正する"}
+                </button>
+              </div>
+
+              {editingScheduleId !== latest.id ? (
+                <div style={{ marginTop: "10px", fontSize: "14px", lineHeight: "1.8" }}>
+                  {latest.date && <div>📆 {latest.date}</div>}
+                  {latest.startTime && (
+                    <div>⏰ {latest.startTime}{latest.endTime ? `〜${latest.endTime}` : "〜"}</div>
+                  )}
+                  <div>📝 {latest.title}</div>
+                </div>
+              ) : (
+                <div style={{ marginTop: "10px" }}>
+                  <div style={{ marginBottom: "6px" }}>
+                    日付
+                    <input
+                      id={`date-${latest.id}`}
+                      defaultValue={latest.date}
+                      placeholder="例: 3月28日"
+                      style={{ width: "100%", marginTop: "2px" }}
+                    />
+                  </div>
+                  <div style={{ marginBottom: "6px" }}>
+                    時間
+                    <div style={{ display: "flex", gap: "4px", marginTop: "2px" }}>
+                      <input id={`start-${latest.id}`} defaultValue={latest.startTime}
+                        placeholder="開始 10:00" style={{ flex: 1 }} />
+                      <span style={{ lineHeight: "28px" }}>〜</span>
+                      <input id={`end-${latest.id}`} defaultValue={latest.endTime}
+                        placeholder="終了 11:00" style={{ flex: 1 }} />
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: "10px" }}>
+                    内容
+                    <input
+                      id={`title-${latest.id}`}
+                      defaultValue={latest.title}
+                      placeholder="内容"
+                      style={{ width: "100%", marginTop: "2px" }}
+                    />
+                  </div>
+                  <button
+                    onClick={() => {
+                      const allS = JSON.parse(localStorage.getItem("chamaSchedules") || "[]");
+                      const idx = allS.findIndex((x: any) => x.id === latest.id);
+                      if (idx !== -1) {
+                        allS[idx] = {
+                          ...allS[idx],
+                          date:      (document.getElementById(`date-${latest.id}`) as HTMLInputElement)?.value || latest.date,
+                          startTime: (document.getElementById(`start-${latest.id}`) as HTMLInputElement)?.value || latest.startTime,
+                          endTime:   (document.getElementById(`end-${latest.id}`) as HTMLInputElement)?.value || latest.endTime,
+                          title:     (document.getElementById(`title-${latest.id}`) as HTMLInputElement)?.value || latest.title,
+                        };
+                        localStorage.setItem("chamaSchedules", JSON.stringify(allS));
+                        setSavedSchedules([...allS]);
+                      }
+                      setEditingScheduleId(null);
+                    }}
+                    style={{
+                      width: "100%", padding: "8px",
+                      background: "#5856d6", color: "white",
+                      border: "none", borderRadius: "8px", fontSize: "14px",
+                      touchAction: "manipulation"
+                    }}
+                  >修正を保存する</button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* 昨日の支出 */}
         <div style={card}>
@@ -371,10 +562,37 @@ export default function Home() {
           <div>0円</div>
         </div>
 
-        {/* ToDo */}
+        {/* メモ帳 */}
         <div style={card}>
-          ✅ ToDo
-          <div>なし</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>📓 メモ帳</span>
+            <button
+              onClick={() => setShowAllMemos(!showAllMemos)}
+              style={{ fontSize: "12px", padding: "2px 8px", borderRadius: "6px",
+                border: "1px solid #ccc", background: "#f0f0f0", touchAction: "manipulation" }}
+            >
+              {showAllMemos ? "閉じる" : "全て表示"}
+            </button>
+          </div>
+          {savedMemos.length === 0 ? (
+            <div style={{ marginTop: "6px", fontSize: "14px", color: "#999" }}>メモはありません</div>
+          ) : (
+            (showAllMemos ? savedMemos : savedMemos.slice(-3).reverse()).map((m: any) => (
+              <div key={m.id} style={{
+                marginTop: "6px", padding: "6px 8px", borderRadius: "6px",
+                background: "#f9f9f9", fontSize: "14px"
+              }}>
+                <div style={{ color: "#999", fontSize: "11px" }}>{m.createdAt?.slice(0,10)}</div>
+                <div>{m.content}</div>
+                {m.reminder && (
+                  <div style={{ fontSize: "11px", color: "#5856d6", marginTop: "2px" }}>
+                    🔔 {m.reminderType === "datetime" ? m.reminderDatetime :
+                        m.reminderType === "gps" ? `帰宅${m.reminderDistance}km以内` : "リマインダーあり"}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
 
         {foodLog && !savedLog && (
@@ -421,6 +639,8 @@ export default function Home() {
                     setPriceInput(savedLog.price !== null ? String(savedLog.price) : "");
                     setNameInput(savedLog.name || "");
                     setCommentInput(savedLog.comment || "");
+                    setCompanionsInput(savedLog.companions || "");
+                    setTotalPeopleInput(savedLog.totalPeople !== null ? String(savedLog.totalPeople) : "");
                   }
                   setEditingSavedLog(!editingSavedLog);
                 }}
@@ -438,10 +658,20 @@ export default function Home() {
 
             {!editingSavedLog ? (
               <div style={{ marginTop: "10px", fontSize: "14px", lineHeight: "1.8" }}>
-                <div>🏠 {savedLog.name}</div>
-                {savedLog.price !== null && <div>💰 {savedLog.price.toLocaleString()}円</div>}
-                {savedLog.rating !== null && <div>⭐ 評価 {savedLog.rating}</div>}
-                {savedLog.comment && <div>💬 {savedLog.comment}</div>}
+                {(() => { const fl = getFieldLabels(savedLog.logType); return (
+                  <>
+                    <div>🏠 {fl.name}：{savedLog.name}</div>
+                    {savedLog.logType === "shopping" && (savedLog as any).itemsBought && (
+                      <div>🛒 買った物：{(savedLog as any).itemsBought}</div>
+                    )}
+                    {savedLog.price !== null && <div>💰 {fl.price}：{savedLog.price.toLocaleString()}円</div>}
+                    {savedLog.rating !== null && <div>⭐ 評価：{savedLog.rating}</div>}
+                    {savedLog.logType !== "shopping" && savedLog.comment && <div>💬 感想：{savedLog.comment}</div>}
+                    {savedLog.logType === "shopping" && savedLog.comment && <div>📝 メモ：{savedLog.comment}</div>}
+                    {savedLog.companions && <div>👥 同行者：{savedLog.companions}</div>}
+                    {savedLog.totalPeople !== null && <div>👤 合計：{savedLog.totalPeople}人</div>}
+                  </>
+                ); })()}
               </div>
             ) : (
               <div>
@@ -464,65 +694,88 @@ export default function Home() {
                     >停止</button>
                   </div>
                 )}
-                <div style={{ marginTop: "10px" }}>
-                  店名
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} style={{ flex: 1 }} autoComplete="off" />
-                    <button onClick={() => startFieldRecording("name")} disabled={!!fieldRecording}
-                      style={{ padding: "4px 8px", fontSize: "16px", border: "none", background: "transparent", touchAction: "manipulation", opacity: fieldRecording ? 0.4 : 1 }}>🎤</button>
-                  </div>
-                </div>
-                <div style={{ marginTop: "10px" }}>
-                  価格
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <input
-                      value={priceInput}
-                      onChange={(e) => setPriceInput(e.target.value)}
-                      style={{ flex: 1 }}
-                      type="text"
-                      inputMode="numeric"
-                    />
-                    <span>円</span>
-                  </div>
-                </div>
-                <div style={{ marginTop: "10px" }}>
-                  評価
-                  <input value={ratingInput} onChange={(e) => setRatingInput(e.target.value)} style={{ width: "100%" }} type="text" inputMode="decimal" />
-                </div>
-                <div style={{ marginTop: "10px" }}>
-                  感想
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} style={{ flex: 1 }} autoComplete="off" />
-                    <button onClick={() => startFieldRecording("comment")} disabled={!!fieldRecording}
-                      style={{ padding: "4px 8px", fontSize: "16px", border: "none", background: "transparent", touchAction: "manipulation", opacity: fieldRecording ? 0.4 : 1 }}>🎤</button>
-                  </div>
-                </div>
+                {(() => {
+                  const fl = getFieldLabels(savedLog.logType);
+                  return (
+                    <>
+                      <div style={{ marginTop: "10px" }}>
+                        {fl.name}
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} style={{ flex: 1 }} autoComplete="off" />
+                          <button onClick={() => startFieldRecording("name")} disabled={!!fieldRecording}
+                            style={{ padding: "4px 8px", fontSize: "16px", border: "none", background: "transparent", touchAction: "manipulation", opacity: fieldRecording ? 0.4 : 1 }}>🎤</button>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: "10px" }}>
+                        {fl.price}
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <input value={priceInput} onChange={(e) => setPriceInput(e.target.value)}
+                            style={{ flex: 1 }} type="text" inputMode="numeric" />
+                          <span>円</span>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: "10px" }}>
+                        評価
+                        <input value={ratingInput} onChange={(e) => setRatingInput(e.target.value)}
+                          style={{ width: "100%" }} type="text" inputMode="decimal" />
+                      </div>
+                      <div style={{ marginTop: "10px" }}>
+                        感想
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} style={{ flex: 1 }} autoComplete="off" />
+                          <button onClick={() => startFieldRecording("comment")} disabled={!!fieldRecording}
+                            style={{ padding: "4px 8px", fontSize: "16px", border: "none", background: "transparent", touchAction: "manipulation", opacity: fieldRecording ? 0.4 : 1 }}>🎤</button>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: "10px" }}>
+                        👥 同行者
+                        <input value={companionsInput} onChange={(e) => setCompanionsInput(e.target.value)}
+                          style={{ width: "100%" }} placeholder="例: キーちゃん" autoComplete="off" />
+                      </div>
+                      <div style={{ marginTop: "10px" }}>
+                        👤 合計人数
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <input value={totalPeopleInput} onChange={(e) => setTotalPeopleInput(e.target.value)}
+                            style={{ flex: 1 }} type="text" inputMode="numeric" />
+                          <span>人</span>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
                 <button
                   onClick={() => {
                     if (!savedLog) return;
                     const parsedPrice = priceInput === "" ? null : Number(priceInput);
                     const parsedRating = ratingInput === "" ? null : Number(ratingInput);
+                    const parsedTotalPeople = totalPeopleInput === "" ? null : Number(totalPeopleInput);
                     const updatedLog = {
                       ...savedLog,
-                      name: nameInput || savedLog.name,
-                      comment: commentInput,
-                      price: isNaN(parsedPrice as number) ? savedLog.price : parsedPrice,
-                      rating: isNaN(parsedRating as number) ? savedLog.rating : parsedRating,
+                      name:        nameInput || savedLog.name,
+                      comment:     commentInput,
+                      companions:  companionsInput,
+                      totalPeople: isNaN(parsedTotalPeople as number) ? savedLog.totalPeople : parsedTotalPeople,
+                      price:       isNaN(parsedPrice as number) ? savedLog.price : parsedPrice,
+                      rating:      isNaN(parsedRating as number) ? savedLog.rating : parsedRating,
                     };
                     const logs: ChamaLog[] = JSON.parse(localStorage.getItem("chamaLogs") || "[]");
                     const idx = logs.findIndex((l) => l.id === savedLog.id);
                     if (idx !== -1) {
                       logs[idx] = {
                         ...logs[idx],
-                        name: updatedLog.name,
-                        price: updatedLog.price,
-                        rating: updatedLog.rating,
-                        comment: updatedLog.comment,
+                        name:        updatedLog.name,
+                        price:       updatedLog.price,
+                        rating:      updatedLog.rating,
+                        comment:     updatedLog.comment,
+                        companions:  updatedLog.companions,
+                        totalPeople: updatedLog.totalPeople,
                         memo: [
                           updatedLog.name,
                           updatedLog.price !== null ? updatedLog.price.toLocaleString() + "円" : null,
                           updatedLog.rating !== null ? "評価" + updatedLog.rating : null,
-                          updatedLog.comment || null
+                          updatedLog.comment || null,
+                          updatedLog.companions ? "同行者:" + updatedLog.companions : null,
+                          updatedLog.totalPeople !== null ? "計" + updatedLog.totalPeople + "人" : null,
                         ].filter(Boolean).join(" / ")
                       };
                       localStorage.setItem("chamaLogs", JSON.stringify(logs));
@@ -608,22 +861,25 @@ export default function Home() {
                   id: createLogId(),
                   type: (["restaurant","hotel","spot","work"].includes(foodLog.logType)
                     ? foodLog.logType : "restaurant") as ChamaLog["type"],
-                  name: foodLog.name,
-                  price: foodLog.price,
-                  rating: foodLog.rating,
-                  comment: foodLog.comment,
-                  genre: foodLog.genre,
-                  memo: foodLog.memo,
-                  lat: location?.lat,
-                  lon: location?.lon,
-                  country: address.country,
-                  prefecture: address.prefecture,
-                  city: address.city,
-                  visitedAt: new Date().toISOString()
+                  name:        foodLog.name,
+                  price:       foodLog.price,
+                  rating:      foodLog.rating,
+                  comment:     foodLog.comment,
+                  genre:       foodLog.genre,
+                  companions:  foodLog.companions,
+                  totalPeople: foodLog.totalPeople,
+                  itemsBought: foodLog.itemsBought,
+                  memo:        foodLog.memo,
+                  lat:         location?.lat,
+                  lon:         location?.lon,
+                  country:     address.country,
+                  prefecture:  address.prefecture,
+                  city:        address.city,
+                  visitedAt:   new Date().toISOString()
                 };
                 logs.push(newLog);
                 localStorage.setItem("chamaLogs", JSON.stringify(logs));
-                setSavedLog({ ...foodLog, id: newLog.id, logType: foodLog.logType });
+                setSavedLog({ ...foodLog, id: newLog.id, logType: foodLog.logType, itemsBought: foodLog.itemsBought });
                 setEditingSavedLog(false);
                 setConfirmSave(false);
                 setFoodLog(null);
@@ -652,6 +908,184 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* メモ保存確認ポップアップ */}
+      {confirmMemoSave && pendingMemo && (
+        <div
+          className="no-select"
+          onContextMenu={(e) => e.preventDefault()}
+          style={{
+            position: "fixed", bottom: "180px", left: "50%",
+            transform: "translateX(-50%)",
+            background: "white", padding: "16px", borderRadius: "12px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+            width: "290px",
+            userSelect: "none", WebkitUserSelect: "none",
+            WebkitTouchCallout: "none", WebkitTapHighlightColor: "transparent",
+            touchAction: "manipulation"
+          }}
+        >
+          <div style={{ fontSize: "16px", marginBottom: "10px", textAlign: "center" }}>
+            📓 このメモを保存する？
+          </div>
+
+          {/* 入力日 */}
+          <div style={{ fontSize: "12px", color: "#999", marginBottom: "8px" }}>
+            📅 {new Date().toLocaleDateString("ja-JP")}
+          </div>
+
+          {/* 内容 */}
+          <div style={{ marginBottom: "10px" }}>
+            <div style={{ fontSize: "13px", color: "#666", marginBottom: "4px" }}>内容</div>
+            <textarea
+              value={pendingMemo.content}
+              onChange={(e) => setPendingMemo({ ...pendingMemo, content: e.target.value })}
+              style={{ width: "100%", minHeight: "60px", fontSize: "14px",
+                borderRadius: "6px", border: "1px solid #ddd", padding: "6px" }}
+            />
+          </div>
+
+          {/* リマインダー */}
+          <div style={{ marginBottom: "12px" }}>
+            <label style={{ fontSize: "13px", display: "flex", alignItems: "center", gap: "6px" }}>
+              <input
+                type="checkbox"
+                checked={pendingMemo.reminder}
+                onChange={(e) => setPendingMemo({ ...pendingMemo, reminder: e.target.checked })}
+              />
+              🔔 リマインダーを設定する
+            </label>
+
+            {pendingMemo.reminder && (
+              <div style={{ marginTop: "8px", paddingLeft: "8px" }}>
+                <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                  <label style={{ fontSize: "13px", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <input type="radio" name="reminderType" value="datetime"
+                      checked={pendingMemo.reminderType === "datetime"}
+                      onChange={() => setPendingMemo({ ...pendingMemo, reminderType: "datetime" })}
+                    />
+                    日時指定
+                  </label>
+                  <label style={{ fontSize: "13px", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <input type="radio" name="reminderType" value="gps"
+                      checked={pendingMemo.reminderType === "gps"}
+                      onChange={() => setPendingMemo({ ...pendingMemo, reminderType: "gps" })}
+                    />
+                    帰宅時GPS
+                  </label>
+                </div>
+
+                {pendingMemo.reminderType === "datetime" && (
+                  <input
+                    type="datetime-local"
+                    value={pendingMemo.reminderDatetime}
+                    onChange={(e) => setPendingMemo({ ...pendingMemo, reminderDatetime: e.target.value })}
+                    style={{ width: "100%", fontSize: "13px", padding: "4px",
+                      borderRadius: "6px", border: "1px solid #ddd" }}
+                  />
+                )}
+
+                {pendingMemo.reminderType === "gps" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px" }}>
+                    自宅から
+                    <input
+                      type="number"
+                      value={pendingMemo.reminderDistance}
+                      onChange={(e) => setPendingMemo({ ...pendingMemo, reminderDistance: Number(e.target.value) })}
+                      style={{ width: "50px", padding: "2px 4px",
+                        borderRadius: "4px", border: "1px solid #ddd" }}
+                    />
+                    km以内で通知
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              onClick={() => {
+                const memos = JSON.parse(localStorage.getItem("chamaMemos") || "[]");
+                memos.push(pendingMemo);
+                localStorage.setItem("chamaMemos", JSON.stringify(memos));
+                setSavedMemos([...memos]);
+                setConfirmMemoSave(false);
+                setPendingMemo(null);
+              }}
+              style={{
+                flex: 1, padding: "8px", background: "#ff4d6d", color: "white",
+                border: "none", borderRadius: "8px", fontSize: "14px",
+                touchAction: "manipulation"
+              }}
+            >保存</button>
+            <button
+              onClick={() => { setConfirmMemoSave(false); setPendingMemo(null); }}
+              style={{
+                flex: 1, padding: "8px", background: "#f0f0f0",
+                border: "none", borderRadius: "8px", fontSize: "14px",
+                touchAction: "manipulation"
+              }}
+            >キャンセル</button>
+          </div>
+        </div>
+      )}
+
+      {/* 予定保存確認ポップアップ */}
+      {confirmScheduleSave && scheduleLog && (
+        <div
+          className="no-select"
+          onContextMenu={(e) => e.preventDefault()}
+          style={{
+            position: "fixed", bottom: "180px", left: "50%",
+            transform: "translateX(-50%)",
+            background: "white", padding: "16px", borderRadius: "12px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+            width: "280px", textAlign: "center",
+            userSelect: "none", WebkitUserSelect: "none",
+            WebkitTouchCallout: "none", WebkitTapHighlightColor: "transparent",
+            touchAction: "manipulation"
+          }}
+        >
+          <div style={{ fontSize: "16px", marginBottom: "10px" }}>
+            📅 この予定を保存する？
+          </div>
+          <div style={{ fontSize: "14px", color: "#333", marginBottom: "4px" }}>
+            {scheduleLog.date && <div>📆 {scheduleLog.date}</div>}
+            {scheduleLog.startTime && (
+              <div>⏰ {scheduleLog.startTime}{scheduleLog.endTime ? `〜${scheduleLog.endTime}` : "〜"}</div>
+            )}
+            <div>📝 {scheduleLog.title}</div>
+          </div>
+          <div style={{ marginTop: "12px" }}>
+            <button
+              onClick={() => {
+                if (!scheduleLog) return;
+                const schedules = JSON.parse(localStorage.getItem("chamaSchedules") || "[]");
+                const newSchedule = {
+                  id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+                  ...scheduleLog,
+                  createdAt: new Date().toISOString(),
+                };
+                schedules.push(newSchedule);
+                localStorage.setItem("chamaSchedules", JSON.stringify(schedules));
+                setSavedSchedules(schedules);
+                setConfirmScheduleSave(false);
+                setScheduleLog(null);
+              }}
+              style={{
+                marginRight: "10px", padding: "6px 12px",
+                touchAction: "manipulation"
+              }}
+            >YES</button>
+            <button
+              onClick={() => { setConfirmScheduleSave(false); setScheduleLog(null); }}
+              style={{ padding: "6px 12px", touchAction: "manipulation" }}
+            >NO</button>
+          </div>
+        </div>
+      )}
+
+      <NavBar />
 
       {/* ✅ マイクボタン — onClick のみ、長押し対策済み */}
       <div
