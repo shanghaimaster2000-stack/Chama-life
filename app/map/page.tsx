@@ -25,7 +25,7 @@ import {
   getLogIcon,
   calcEarthLaps,
 } from "./mapUtils";
-import type { ArcRoute, LatLon } from "../../type";
+import type { ArcRoute, LatLon } from "../type";
 
 // -----------------------------------------------------------------------------
 // Leafletコンポーネント（SSR無効）
