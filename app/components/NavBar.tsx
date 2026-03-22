@@ -1,12 +1,17 @@
 "use client";
 import { usePathname, useRouter } from "next/navigation";
 
+// -----------------------------------------------------------------------------
+// ナビゲーション項目
+// 将来追加する時はここに追加するだけでOK
+// -----------------------------------------------------------------------------
 const NAV_ITEMS = [
   { icon: "🏠", label: "ホーム",  path: "/"          },
   { icon: "📅", label: "予定",    path: "/schedule"  },
   { icon: "📓", label: "メモ",    path: "/memo"      },
   { icon: "📊", label: "分析",    path: "/analyze"   },
   { icon: "🌏", label: "地図",    path: "/map"       },
+  { icon: "⚙️", label: "設定",    path: "/settings"  },
 ];
 
 export default function NavBar() {
@@ -29,6 +34,7 @@ export default function NavBar() {
       height: "60px",
       zIndex: 998,
       boxShadow: "0 -2px 8px rgba(0,0,0,0.06)",
+      overflowX: "auto",
     }}>
       {NAV_ITEMS.map((item) => {
         const isActive = pathname === item.path;
@@ -42,6 +48,7 @@ export default function NavBar() {
               alignItems: "center",
               justifyContent: "center",
               flex: 1,
+              minWidth: "52px",
               height: "100%",
               border: "none",
               background: "transparent",
@@ -52,11 +59,12 @@ export default function NavBar() {
               position: "relative",
             }}
           >
-            <span style={{ fontSize: "22px", lineHeight: 1 }}>{item.icon}</span>
+            <span style={{ fontSize: "20px", lineHeight: 1 }}>{item.icon}</span>
             <span style={{
-              fontSize: "10px",
+              fontSize: "9px",
               color: isActive ? "#ff4d6d" : "#999",
               fontWeight: isActive ? "bold" : "normal",
+              whiteSpace: "nowrap",
             }}>
               {item.label}
             </span>
