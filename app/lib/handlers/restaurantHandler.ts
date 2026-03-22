@@ -94,21 +94,23 @@ function isGenreWord(token: string): boolean {
  * 店名を抽出する
  *
  * ロジック:
- * 1. 数値・評価・同行者を除去
- * 2. スペース区切りでトークン化
- * 3. 最初のトークンから始めて、以下の条件で店名トークンを集める:
+ * 1. 表記ゆれを正規化（例: "スタバ" → "スターバックス"、"一覧" → "一蘭"）
+ * 2. 数値・評価・同行者を除去
+ * 3. スペース区切りでトークン化
+ * 4. 最初のトークンから始めて、以下の条件で店名トークンを集める:
  *    - ジャンルワード単独 → 店名終了
  *    - 感想キーワード → 店名終了
  *    - 「〇〇店」「〇〇亭」などのサフィックス → 店名に追加して終了
  *    - それ以外 → 店名に追加して継続
  */
 function extractShopName(text: string, placeName?: string): string {
-  // 辞書マッチを先に試みる
-  const fromDict = normalizeShopName(text);
-  if (fromDict) return fromDict;
+  // ① 表記ゆれを正規化してからトークン解析（店名の"確定"はしない）
+  const normalizedText = normalizeShopName(text);
 
-  // 数値情報・評価・同行者を除去
-  let candidate = text
+  console.log("extractShopName input:", normalizedText);
+
+  // ② 数値情報・評価・同行者を除去
+  let candidate = normalizedText
     .replace(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(円|万円)/g, "")
     .replace(/[一二三四五六七八九十百千万〇零]+\s*円/g, "")
     .replace(/(?:評価|ひょうか)\s*[0-9]+(?:\.[0-9]+)?/g, "")
@@ -117,6 +119,8 @@ function extractShopName(text: string, placeName?: string): string {
     .replace(/\s+/g, " ").trim();
 
   const tokens = candidate.split(" ").filter(Boolean);
+  console.log("tokens:", tokens);
+
   if (tokens.length === 0) return placeName || "名称未設定";
 
   const shopTokens: string[] = [];

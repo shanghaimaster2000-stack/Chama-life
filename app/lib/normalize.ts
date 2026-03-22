@@ -203,15 +203,20 @@ export function extractRating(text: string): number | null {
 }
 
 /**
- * 店名の正規化（辞書マッチ）
+ * 店名テキストの表記ゆれを正規形に置換する（確定はしない）
+ * 例: "スタバ 梅田店" → "スターバックス 梅田店"
+ * ※ 店名の切り出し・確定は呼び出し元(extractShopName)が行う
  */
 export function normalizeShopName(text: string): string {
+  let result = text;
   for (const shop of SHOP_ALIASES) {
-    if (shop.aliases.some((alias) => text.includes(alias))) {
-      return shop.canonical;
+    for (const alias of shop.aliases) {
+      // canonical 自身はスキップ（無限置換防止）
+      if (alias === shop.canonical) continue;
+      result = result.replace(new RegExp(alias, "g"), shop.canonical);
     }
   }
-  return "";
+  return result;
 }
 
 /**

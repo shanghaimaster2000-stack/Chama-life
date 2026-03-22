@@ -264,8 +264,14 @@ export default function Home() {
     setSearchedLocation(null);
     setLocationCandidates([]);
     try {
-      const q = encodeURIComponent(locationSearchQuery || name);
-      const res = await fetch(`/api/location-search?q=${q}`);
+      // locationSearchQuery が空の場合は name を使う（表示と一致させる）
+      const queryText = locationSearchQuery.trim() || name;
+      const q = encodeURIComponent(queryText);
+
+      // 緯度経度があれば付加して精度UP
+      const geoParams = location ? `&lat=${location.lat}&lon=${location.lon}` : "";
+
+      const res = await fetch(`/api/location-search?q=${q}${geoParams}`);
       const data = await res.json();
       if (data.candidates && data.candidates.length > 0) {
         if (data.candidates.length === 1) {
@@ -282,7 +288,6 @@ export default function Home() {
       setIsSearchingLocation(false);
     }
   }
-
 
   // フィールド個別の音声入力
   function startFieldRecording(field: string) {
@@ -921,7 +926,7 @@ export default function Home() {
                 <div>
                   <div style={{ display: "flex", gap: "4px", marginBottom: "4px" }}>
                     <input
-                      value={locationSearchQuery || foodLog.name}
+                      value={locationSearchQuery !== "" ? locationSearchQuery : foodLog.name}
                       onChange={e => setLocationSearchQuery(e.target.value)}
                       placeholder="店名・住所で検索"
                       style={{ flex: 1, padding: "5px 8px", fontSize: "12px",
