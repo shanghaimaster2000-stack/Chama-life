@@ -8,7 +8,7 @@
 //   - 将来の3D地球儀・海外対応を見越した計算式を使用
 // =============================================================================
 
-import type { LatLon, ArcRoute, LocationCluster, TravelType, ChamaLog } from "../../type";
+import type { LatLon, ArcRoute, LocationCluster, TravelType, ChamaLog } from "../type";
 
 // -----------------------------------------------------------------------------
 // アーチ線生成

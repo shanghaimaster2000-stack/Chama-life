@@ -10,7 +10,7 @@
 
 "use client";
 import { useEffect, useState } from "react";
-import type { ChamaLog, MapData, ArcRoute, TravelType, LatLon } from "../../type";
+import type { ChamaLog, MapData, ArcRoute, TravelType, LatLon } from "../type";
 import {
   createArc,
   calcBounds,
